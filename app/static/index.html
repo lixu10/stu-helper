@@ -10,7 +10,7 @@
     />
     <title>Student Helper</title>
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260915f" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260915j" />
   </head>
   <body>
     <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -34,6 +34,18 @@
             <span class="nav-icon" aria-hidden="true">≡</span>
             课程成绩
           </button>
+          <button class="nav-item" data-view="analysis" type="button">
+            <span class="nav-icon" aria-hidden="true">⌇</span>
+            成绩分析
+          </button>
+          <button class="nav-item" data-view="comprehensive" type="button">
+            <span class="nav-icon" aria-hidden="true">＋</span>
+            综合测评
+          </button>
+          <button class="nav-item" data-view="calendar" type="button">
+            <span class="nav-icon" aria-hidden="true">▦</span>
+            竞赛日历
+          </button>
           <button class="nav-item" data-view="rules" type="button">
             <span class="nav-icon" aria-hidden="true">◇</span>
             计分规则
@@ -54,6 +66,7 @@
             <strong id="sidebar-user-name">正在读取</strong>
             <small id="sidebar-user-id">—</small>
           </span>
+          <button class="sidebar-logout" id="account-logout" type="button" hidden>退出</button>
         </div>
       </aside>
 
@@ -164,7 +177,7 @@
                 </div>
                 <div>
                   <dt>凭据策略</dt>
-                  <dd>只保存会话，不保存密码</dd>
+                  <dd>成绩与登录态持久化，密码不保存</dd>
                 </div>
               </dl>
               <button class="inline-link" data-go-view="rules" type="button">查看规则来源与计算细节</button>
@@ -235,6 +248,176 @@
           </div>
         </section>
 
+        <section class="view" data-view-panel="analysis" aria-labelledby="analysis-title">
+          <header class="page-header">
+            <div>
+              <p class="context-line">V0.2 · 学业分析</p>
+              <h1 id="analysis-title">从历史成绩推到下一步</h1>
+            </div>
+            <div class="export-actions" id="export-actions">
+              <a class="button ghost" href="/api/v1/export/courses.csv">导出 CSV</a>
+              <a class="button ghost" href="/api/v1/export/data.json">导出 JSON</a>
+            </div>
+          </header>
+
+          <section class="target-board" aria-labelledby="target-title">
+            <div>
+              <span>当前规则 GPA</span>
+              <strong id="analysis-current-gpa">—</strong>
+            </div>
+            <label>
+              <span id="target-title">目标 GPA</span>
+              <input id="target-gpa" type="number" min="0" max="4" step="0.01" value="3.85" />
+            </label>
+            <button class="button primary" id="calculate-target" type="button">反推剩余成绩</button>
+            <div class="target-result">
+              <span>剩余课程需要</span>
+              <strong id="target-required-score">—</strong>
+              <small id="target-status">填写目标后计算</small>
+            </div>
+          </section>
+
+          <section class="regret-panel" aria-labelledby="regret-title">
+            <div class="regret-heading">
+              <div>
+                <span class="capsule-mark" aria-hidden="true">Rx</span>
+                <div><h2 id="regret-title">后悔药</h2><p>如果当时没有这门课，加权 GPA 会高多少</p></div>
+              </div>
+              <small id="regret-basis">按学分加权反事实计算</small>
+            </div>
+            <div class="analysis-summary-strip">
+              <div><span>计入学分</span><strong id="analysis-included-credits">—</strong></div>
+              <div><span>学分绩点总和</span><strong id="analysis-weighted-points">—</strong></div>
+              <div><span>绩点波动</span><strong id="analysis-volatility">—</strong></div>
+            </div>
+            <div class="regret-list" id="regret-list"></div>
+          </section>
+
+          <div class="analysis-grid">
+            <section class="analysis-ledger" aria-labelledby="term-analysis-title">
+              <div class="section-heading compact-heading">
+                <h2 id="term-analysis-title">学期航迹</h2>
+                <span>全部 / 当前规则</span>
+              </div>
+              <div class="term-timeline" id="term-timeline"></div>
+            </section>
+            <section class="analysis-ledger" aria-labelledby="opportunity-title">
+              <div class="section-heading compact-heading">
+                <h2 id="opportunity-title">未来课程杠杆</h2>
+                <span>60–100 分的最大摆幅</span>
+              </div>
+              <div class="impact-list" id="impact-list"></div>
+            </section>
+          </div>
+
+          <div class="analysis-grid analysis-data-grid">
+            <section class="analysis-ledger" aria-labelledby="group-analysis-title">
+              <div class="section-heading compact-heading">
+                <h2 id="group-analysis-title">规则组表现</h2>
+                <span>A–F 学分加权 GPA</span>
+              </div>
+              <div class="group-performance" id="group-performance"></div>
+            </section>
+            <section class="analysis-ledger" aria-labelledby="distribution-title">
+              <div class="section-heading compact-heading">
+                <h2 id="distribution-title">绩点分布</h2>
+                <span>按学分占比</span>
+              </div>
+              <div class="grade-distribution" id="grade-distribution"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="comprehensive" aria-labelledby="comprehensive-title">
+          <header class="page-header">
+            <div>
+              <p class="context-line">参考 2023 级折合方法</p>
+              <h1 id="comprehensive-title">综合测评计算</h1>
+            </div>
+            <span class="reference-chip">非 2024 级官方结果</span>
+          </header>
+
+          <div class="comprehensive-layout">
+            <div class="comprehensive-editor">
+              <section class="base-score-strip">
+                <label class="check-field compact-check">
+                  <input id="use-current-gpa" type="checkbox" checked />
+                  <span><strong>叠加当前规则 GPA</strong><small id="current-gpa-source">当前为 —</small></span>
+                </label>
+                <label class="field inline-field" id="manual-gpa-field" hidden>
+                  <span>手动基础 GPA</span>
+                  <input id="manual-base-gpa" type="number" min="0" max="4" step="0.0001" />
+                </label>
+                <button class="button secondary" id="save-comprehensive-settings" type="button">保存基础分</button>
+              </section>
+
+              <div class="category-strip" id="comprehensive-category-strip"></div>
+
+              <section class="comprehensive-entry-panel" aria-labelledby="add-comprehensive-title">
+                <div class="section-heading compact-heading">
+                  <h2 id="add-comprehensive-title">添加加分项</h2>
+                  <span>分值以方案或审核结果为准</span>
+                </div>
+                <form id="comprehensive-item-form" class="comprehensive-form">
+                  <label class="field"><span>类别</span><select id="comprehensive-category"></select></label>
+                  <label class="field"><span>项目类型</span><select id="comprehensive-item-type"></select></label>
+                  <div class="comprehensive-auto-fields" id="comprehensive-auto-fields"></div>
+                  <label class="field wide-field"><span>备注</span><input id="comprehensive-note" maxlength="500" /></label>
+                  <div class="auto-score-preview" id="auto-score-preview"><span>自动原始分</span><strong>填写奖项后计算</strong></div>
+                  <button class="button primary" id="add-comprehensive-item" type="submit">添加并重算</button>
+                </form>
+                <p class="dialog-error" id="comprehensive-error" role="alert"></p>
+              </section>
+
+              <section class="comprehensive-items-section" aria-labelledby="comprehensive-items-title">
+                <div class="section-heading compact-heading">
+                  <h2 id="comprehensive-items-title">已录入项目</h2>
+                  <span id="comprehensive-item-count">0 项</span>
+                </div>
+                <div class="comprehensive-items" id="comprehensive-items"></div>
+              </section>
+            </div>
+
+            <aside class="comprehensive-ledger" aria-label="综测折合结果">
+              <div class="ledger-title"><span>折合账本</span><small>参考方案</small></div>
+              <div class="ledger-base"><span>基础 GPA</span><strong id="comprehensive-base-gpa">—</strong></div>
+              <div id="comprehensive-ledger-rows"></div>
+              <div class="ledger-addition"><span>综合素质量化加分</span><strong id="comprehensive-addition">+ —</strong></div>
+              <div class="ledger-final"><span>最终综合成绩</span><strong id="comprehensive-final">—</strong></div>
+              <p id="comprehensive-notice"></p>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="calendar" aria-labelledby="calendar-title">
+          <header class="page-header calendar-page-header">
+            <div>
+              <p class="context-line">2026 实际赛程 · 2027 时间推算</p>
+              <h1 id="calendar-title">竞赛日历</h1>
+            </div>
+            <span class="calendar-updated" id="calendar-updated">资料更新于 —</span>
+          </header>
+
+          <section class="calendar-summary" aria-label="竞赛日历统计">
+            <div><span>政策条目</span><strong id="calendar-policy-count">—</strong></div>
+            <div><span>去重赛事</span><strong id="calendar-unique-count">—</strong></div>
+            <div><span>2026 已核实</span><strong id="calendar-official-count">—</strong></div>
+            <div><span>2027 已官宣</span><strong id="calendar-2027-official-count">—</strong></div>
+          </section>
+
+          <div class="calendar-filter-bar">
+            <label class="calendar-search"><span aria-hidden="true">⌕</span><input id="calendar-search" type="search" placeholder="搜索竞赛" /></label>
+            <label><span class="sr-only">年份</span><select id="calendar-year"><option value="2026">2026 年</option><option value="2027" selected>2027 年</option></select></label>
+            <label><span class="sr-only">竞赛类别</span><select id="calendar-category"><option value="all">全部类别</option></select></label>
+            <label><span class="sr-only">时间状态</span><select id="calendar-status"><option value="all">全部状态</option><option value="verified">官方信息</option><option value="estimated">预计时间</option><option value="not-held">本年不举办</option></select></label>
+            <label><span class="sr-only">时间排序</span><select id="calendar-sort"><option value="asc">时间从近到远</option><option value="desc">时间从远到近</option></select></label>
+            <span id="calendar-filter-count">—</span>
+          </div>
+
+          <div class="calendar-notice" id="calendar-notice"></div>
+          <div class="competition-calendar" id="competition-calendar" aria-live="polite"></div>
+        </section>
+
         <section class="view" data-view-panel="rules" aria-labelledby="rules-title">
           <header class="page-header">
             <div>
@@ -299,6 +482,9 @@
       <nav class="mobile-nav" aria-label="移动端主导航">
         <button class="is-active" data-view="overview" type="button"><span>⌁</span>总览</button>
         <button data-view="courses" type="button"><span>≡</span>成绩</button>
+        <button data-view="analysis" type="button"><span>⌇</span>分析</button>
+        <button data-view="comprehensive" type="button"><span>＋</span>综测</button>
+        <button data-view="calendar" type="button"><span>▦</span>竞赛</button>
         <button data-view="rules" type="button"><span>◇</span>规则</button>
       </nav>
     </div>
@@ -351,9 +537,13 @@
       </div>
 
       <section id="school-login-panel">
+        <div class="saved-account-note" id="saved-account-note" hidden>
+          <strong>本地成绩已经恢复</strong>
+          <span>只有刷新学校数据时才需要重新验证统一认证。</span>
+        </div>
         <div class="privacy-note">
           <span aria-hidden="true">⌁</span>
-          <p><strong>密码不会保存。</strong>学校会话仅在当前服务进程内有效。</p>
+          <p><strong>密码不会保存。</strong>成绩、综测项目和本站登录态会持久化。</p>
         </div>
         <form id="school-login-form">
           <label class="field">
@@ -375,7 +565,7 @@
           <p class="dialog-error" id="school-login-error" role="alert"></p>
           <div class="dialog-actions">
             <button class="button ghost" id="cancel-school-login" type="button">取消</button>
-            <button class="button primary" id="submit-school-login" type="submit">登录并同步成绩</button>
+            <button class="button primary" id="submit-school-login" type="submit">验证并进入</button>
           </div>
         </form>
       </section>
@@ -398,13 +588,13 @@
         </div>
         <p class="dialog-error" id="school-sync-error" role="alert"></p>
         <div class="dialog-actions split-actions">
-          <button class="button ghost danger-button" id="school-logout" type="button">退出学校账户</button>
+          <button class="button ghost danger-button" id="school-logout" type="button">退出当前账号</button>
           <button class="button primary" id="school-sync" type="button">立即同步</button>
         </div>
       </section>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/static/app.js?v=20260915g" defer></script>
+    <script src="/static/app.js?v=20260915j" defer></script>
   </body>
 </html>

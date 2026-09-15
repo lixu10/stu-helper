@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
+import os
 import re
 import secrets
 from dataclasses import dataclass, field
@@ -15,6 +17,7 @@ from bs4 import BeautifulSoup
 from app.course_matching import build_school_course_key
 
 
+logger = logging.getLogger(__name__)
 SSO_LOGIN_URL = "https://sso.buaa.edu.cn/login"
 SSO_LOGOUT_URL = "https://sso.buaa.edu.cn/logout"
 SSO_CAPTCHA_URL = "https://sso.buaa.edu.cn/captcha"
@@ -219,6 +222,9 @@ class BuaaSessionManager:
         return httpx.AsyncClient(
             timeout=httpx.Timeout(20.0, connect=10.0),
             follow_redirects=False,
+            # Local proxy variables are frequently injected by IDEs and sandboxes.
+            # BUAA SSO is public HTTPS, so direct access is safer unless explicitly enabled.
+            trust_env=os.getenv("STUDENT_HELPER_TRUST_ENV", "0") == "1",
             headers={
                 "User-Agent": "StudentHelper/1.0 (+local authorized BUAA student client)",
                 "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.5",
@@ -269,6 +275,7 @@ class BuaaSessionManager:
             raise
         except (httpx.HTTPError, ValueError) as exc:
             await client.aclose()
+            logger.warning("BUAA SSO preload failed: %s: %s", type(exc).__name__, exc)
             raise BuaaUpstreamError("无法连接北航统一认证，请检查网络或稍后重试", "sso_unavailable") from exc
 
     async def login(

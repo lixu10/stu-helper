@@ -11,14 +11,15 @@
 - 多用户数据模型、未登录演示态和浏览器隔离的学校会话。
 - 本人成绩的北航 SSO/成绩应用直连适配器。
 - 软件学院 2024 级推免默认规则。
-- 课程明细、规则进度、结果解释、人工修正和情景测算。
+- 课程明细、规则进度、结果解释、人工修正、情景测算、加权 GPA 反事实分析和规则组/分布视图。
+- 参考 2023 级方法的奖项字段自动计分、综测折合、个人数据导出和 30 天本站持久登录。
 - Windows 单机与 Docker Compose 单实例部署。
 
 ### 暂不实现
 
 - 公开规则市场和可视化规则编辑器。
 - 班级排名、全班均分和跨学生原始数据查询。
-- AI 分析报告、规则文档自动生成和综测计算。
+- AI 分析报告、规则文档自动生成和 2024 级正式综测规则。
 
 ## 2. 已确认规则
 
@@ -44,7 +45,7 @@
 - 颜色：北航深蓝 `#0F2F5A`、航迹蓝 `#1768A6`、信号绿 `#08756C`、琥珀 `#A75509`、纸白 `#FFFFFF`、冷灰底 `#F2F6F9`。
 - 字体：中文使用 Microsoft YaHei UI / Noto Sans SC；数值使用 Bahnschrift，以便 GPA、分数和学分在窄列中稳定对齐。
 - 对齐：正文和操作左对齐；数值按统一小数位展示。重要状态依赖文字与颜色双重表达。
-- 响应式：桌面使用 248px 固定导航；820px 以下切换为顶部状态条和底部三项导航；成绩表允许横向滚动。
+- 响应式：桌面使用 248px 固定导航；820px 以下切换为顶部状态条和底部五项导航；成绩表允许横向滚动。
 - 动效：仅保留操作反馈，不使用自动入场动画；支持 `prefers-reduced-motion`。
 
 主页面结构：
@@ -54,8 +55,8 @@
 │ 固定导航   │ 标题 / 学院与年级 / 接入状态              │
 │            ├────────────────────────────────────────────┤
 │ 总览       │ 当前 GPA      计入学分 / 均分 / 截止时间  │
-│ 成绩       ├────────────────────────────────────────────┤
-│ 规则       │ A ─ B ─ C ─ D ─ E ─ F 规则航道           │
+│ 成绩/分析  ├────────────────────────────────────────────┤
+│ 综测/规则  │ A ─ B ─ C ─ D ─ E ─ F 规则航道           │
 │            ├──────────────────────┬─────────────────────┤
 │ 数据状态   │ 未修课程情景测算     │ 数据可信度          │
 └────────────┴──────────────────────┴─────────────────────┘
@@ -86,6 +87,8 @@ flowchart LR
 
 - `app/rules.py`：默认规则的稳定、可版本化定义。
 - `app/calculation.py`：不访问网络和数据库的纯计算层，方便用固定样例审计。
+- `app/analytics.py`：学期/累计趋势、移除单课反事实、规则组表现、绩点分布和目标 GPA 反推。
+- `app/comprehensive.py`：17 种综测项目表单、自动计分、去重、限项、封顶和折合计算。
 - `app/database.py`：SQLite 仓储；每条课程保留 `source` 和人工选择状态。
 - `app/integrations/buaa.py`：SSO 预登录、验证码、身份验证、学校 Cookie 隔离和成绩抓取。
 - `app/main.py`：面向页面的 API/BFF，不把学校 Cookie 暴露给浏览器。
@@ -103,6 +106,9 @@ SQLite WAL 适合 Windows 本机和单实例服务器。需要多副本、任务
 | --- | --- | --- |
 | User | id, student_id, cohort, school | 学号唯一；不含统一认证密码 |
 | SchoolSession | opaque_token, cookie_jar, last_seen_at | 仅在后端内存，与本站 HttpOnly Cookie 隔离、可撤销 |
+| AppSession | user_id, token_hash, expires_at | 本站持久登录；数据库只保存令牌哈希 |
+| ComprehensiveProfile | user_id, rule_id, base_mode | 综测规则和是否叠加当前 GPA |
+| ComprehensiveItem | user_id, kind, values_json, score, factor | 用户录入的奖项字段与自动计分结果 |
 | CourseAttempt | user_id, code, term, score, scale, attempt | 保留正考/补考/重修语义 |
 | CourseOverride | attempt_id, changed_fields, reason, created_at | 手工修改是覆盖层，不覆盖原值 |
 | SyncRun | user_id, provider, started_at, result, digest | 支持自动刷新、幂等和审计 |
@@ -128,11 +134,16 @@ SQLite WAL 适合 Windows 本机和单实例服务器。需要多副本、任务
 | GET | `/api/v1/rules/{rule_id}` | 指定规则的完整版本快照 |
 | PUT | `/api/v1/preferences/rule` | 校验并保存当前用户的规则选择 |
 | POST | `/api/v1/scenarios/calculate` | 无副作用情景测算 |
+| GET | `/api/v1/analytics` | 学期趋势、课程影响与目标 GPA 反推 |
+| GET/PUT | `/api/v1/comprehensive`、`/settings` | 读取综测结果并保存基础分设置 |
+| POST/PUT/DELETE | `/api/v1/comprehensive/items` | 持久化管理个人综测项目 |
+| GET | `/api/v1/export/courses.csv`、`/data.json` | 导出个人数据 |
 | GET | `/api/v1/integration/status` | 上游接入能力，不泄露凭据 |
 | POST | `/api/v1/integration/buaa/prelogin` | 创建 10 分钟一次性登录上下文并按需返回验证码图片 |
 | POST | `/api/v1/integration/buaa/login` | 完成 SSO 和用户中心身份校验，密码不保存 |
 | POST | `/api/v1/integration/buaa/sync` | 同步选定学期并归档原始响应快照 |
 | POST | `/api/v1/integration/buaa/logout` | 撤销内存学校会话并退出 SSO |
+| POST | `/api/v1/session/logout` | 同时撤销学校会话和本站持久会话 |
 
 后续服务化建议补充：
 
@@ -143,7 +154,7 @@ SQLite WAL 适合 Windows 本机和单实例服务器。需要多副本、任务
 
 1. 浏览器永远不接收学校 Cookie；只持有本站 HttpOnly、SameSite=Strict 会话，生产环境必须同时启用 Secure。
 2. 统一认证密码不写日志、不写数据库、不写错误跟踪，登录函数结束后不再持有。
-3. 当前学校 Cookie 只存在于服务进程内存，空闲 8 小时或进程退出即失效；数据库只保存成绩快照。
+3. 当前学校 Cookie 只存在于服务进程内存，空闲 8 小时或进程退出即失效；本站登录令牌以哈希形式在数据库保存 30 天。
 4. 每次数据访问都以服务端解析的 `user_id` 限定，禁止由前端传入任意用户 ID。
 5. 同一学号复用一个有效学校会话；并发刷新使用用户级锁，防止重复登录和上游压力。
 6. 提供“退出并清除学校会话”“导出我的数据”“删除账户”三个用户控制项。
@@ -194,11 +205,11 @@ SQLite WAL 适合 Windows 本机和单实例服务器。需要多副本、任务
 ### M3：授权统计与分析
 
 - 管理员聚合数据适配器、阈值保护和审计。
-- 历史趋势、目标分数求解和课程贡献敏感度。
+- 已实现个人历史/累计趋势、目标分数求解、后悔药反事实、规则组表现和绩点分布；班级聚合仍待授权接口。
 - AI 只读取结构化、最小化后的分析输入；输出标注假设和不确定性。
 
 ### M4：综测与文档生成
 
-- 综测规则复用同一个版本模型，增加分项、上限、比例和跨学期累计。
+- 已实现参考规则 17 种项目的动态表单、奖项自动计分、限项、上限、比例、去重与跨重启保存；待接入 2024 级正式规则。
 - 奖项、志愿时长、学生工作等作为可复用事实记录，避免重复输入。
 - AI 生成的是规则草稿，必须经过结构校验、样例回放和人工发布。

@@ -5,6 +5,9 @@ const state = {
   rules: [],
   user: null,
   integration: null,
+  analytics: null,
+  comprehensive: null,
+  competitionCalendar: null,
   loginFlow: null,
 };
 
@@ -69,18 +72,29 @@ function renderUser() {
 }
 
 function renderIntegration() {
-  const connected = Boolean(state.integration?.authenticated);
-  $("#connection-card").classList.toggle("is-connected", connected);
-  $("#connection-title").textContent = connected ? "学校数据已连接" : "脱敏演示模式";
-  $("#connection-caption").textContent = connected
-    ? state.integration.user?.studentId || "会话有效"
+  const schoolConnected = Boolean(state.integration?.schoolAuthenticated);
+  const localConnected = Boolean(state.integration?.localAuthenticated);
+  $("#connection-card").classList.toggle("is-connected", localConnected);
+  $("#connection-title").textContent = schoolConnected
+    ? "学校数据已连接"
+    : localConnected
+      ? "个人数据已恢复"
+      : "脱敏演示模式";
+  $("#connection-caption").textContent = localConnected
+    ? state.integration.user?.studentId || "本地会话有效"
     : "学校账户未连接";
-  $("#mobile-mode-pill").textContent = connected ? "学校数据" : "演示模式";
-  $("#integration-button").textContent = connected ? "管理学校同步" : "连接学校账户";
+  $("#mobile-mode-pill").textContent = localConnected ? "个人数据" : "演示模式";
+  $("#integration-button").textContent = schoolConnected
+    ? "管理学校同步"
+    : localConnected
+      ? "刷新学校数据"
+      : "连接学校账户";
   const tag = $("#source-tag");
-  tag.textContent = connected ? "学校同步" : "演示数据";
-  tag.classList.toggle("demo", !connected);
-  tag.classList.toggle("school", connected);
+  tag.textContent = localConnected ? "本地已保存" : "演示数据";
+  tag.classList.toggle("demo", !localConnected);
+  tag.classList.toggle("school", localConnected);
+  $("#account-logout").hidden = !localConnected;
+  $("#export-actions").hidden = !localConnected;
 }
 
 function renderDashboard() {
@@ -120,6 +134,422 @@ function renderDashboard() {
   state.courses = dashboard.courses;
   renderScenario();
   renderCourses();
+}
+
+function targetStatusText(target) {
+  const messages = {
+    already_met: "按当前已修成绩，目标已经满足",
+    reachable: `覆盖 ${formatNumber(target.pendingCredits, 1)} 个剩余学分`,
+    unreachable: "即使剩余课程均为 4.0 也无法达到",
+    no_pending_courses: "当前规则中没有可用于反推的待修课程",
+  };
+  return messages[target?.status] || "暂无可计算数据";
+}
+
+function renderAnalytics() {
+  const analytics = state.analytics;
+  if (!analytics) return;
+  $("#analysis-current-gpa").textContent = formatNumber(analytics.overall?.rule?.gpa, 3);
+  $("#analysis-included-credits").textContent = formatNumber(analytics.summary?.includedCredits, 1);
+  $("#analysis-weighted-points").textContent = formatNumber(analytics.summary?.weightedGradePoints, 2);
+  $("#analysis-volatility").textContent = formatNumber(analytics.summary?.gradePointVolatility, 3);
+  $("#regret-basis").textContent = analytics.calculationBasis || "按学分加权反事实计算";
+  const target = analytics.target;
+  $("#target-required-score").textContent =
+    target?.status === "reachable" && target.requiredAverageScore !== null
+      ? `约 ${formatNumber(target.requiredAverageScore, 1)} 分`
+      : target?.status === "already_met"
+        ? "已满足"
+        : "—";
+  $("#target-status").textContent = targetStatusText(target);
+
+  const timeline = analytics.timeline || [];
+  $("#term-timeline").innerHTML = timeline.length
+    ? timeline
+        .map((row) => {
+          const allGpa = row.all?.gpa;
+          const ruleGpa = row.rule?.gpa;
+          return `
+            <div class="term-row">
+              <div class="term-row-head">
+                <strong>${escapeHtml(row.term)}</strong>
+                <span>${formatNumber(allGpa, 3)} / <b>${formatNumber(ruleGpa, 3)}</b></span>
+              </div>
+              <div class="term-bars" aria-label="全部课程 ${formatNumber(allGpa, 3)}，规则课程 ${formatNumber(ruleGpa, 3)}">
+                <i style="width:${Math.max(0, Math.min(100, Number(allGpa || 0) * 25))}%"></i>
+                <i style="width:${Math.max(0, Math.min(100, Number(ruleGpa || 0) * 25))}%"></i>
+              </div>
+              <small>${row.all.courseCount} 门 · ${formatNumber(row.all.credits, 1)} 学分 · 累计规则 GPA ${formatNumber(row.cumulativeRule?.gpa, 3)}</small>
+            </div>`;
+        })
+        .join("")
+    : '<p class="empty-copy">同步成绩后显示学期变化。</p>';
+
+  const opportunities = analytics.opportunities || [];
+  const impacts = opportunities.map((item) => ({
+        name: item.name,
+        meta: `${formatNumber(item.credits, 1)} 学分 · 待修`,
+        value: `最多影响 ${formatNumber(item.gpaSwing60To100, 3)}`,
+      }));
+  $("#impact-list").innerHTML = impacts.length
+    ? impacts
+        .map(
+          (item, index) => `
+            <div class="impact-item">
+              <span class="impact-rank">${String(index + 1).padStart(2, "0")}</span>
+              <div><strong>${escapeHtml(item.name)}</strong><small>${item.meta}</small></div>
+              <b>${escapeHtml(item.value)}</b>
+            </div>`,
+        )
+        .join("")
+    : '<p class="empty-copy">暂无规则内课程可分析。</p>';
+
+  const regrets = analytics.regretCourses || [];
+  $("#regret-list").innerHTML = regrets.length
+    ? regrets
+        .map(
+          (item, index) => `
+            <article class="regret-item ${index === 0 ? "is-primary" : ""}">
+              <span class="regret-dose">${index + 1}</span>
+              <div class="regret-course">
+                <strong>${escapeHtml(item.name)}</strong>
+                <small>${escapeHtml(item.term)} · ${formatNumber(item.credits, 1)} 学分 · ${escapeHtml(item.score)} 分 / 绩点 ${formatNumber(item.gradePoint, 3)}</small>
+              </div>
+              <div class="regret-shift"><span>${formatNumber(item.currentGpa, 3)} → ${formatNumber(item.gpaWithoutCourse, 3)}</span><strong>+${formatNumber(item.gpaLiftIfExcluded, 4)}</strong></div>
+            </article>`,
+        )
+        .join("")
+    : '<p class="empty-copy">当前没有拉低加权 GPA 的规则内课程。</p>';
+
+  const groups = analytics.groupPerformance || [];
+  $("#group-performance").innerHTML = groups.length
+    ? groups
+        .map(
+          (group) => `
+            <div class="group-performance-row">
+              <span>${escapeHtml(group.group)}</span>
+              <div><i style="width:${Math.max(0, Math.min(100, Number(group.gpa || 0) * 25))}%"></i></div>
+              <strong>${formatNumber(group.gpa, 3)}</strong>
+              <small>${formatNumber(group.credits, 1)} 学分</small>
+            </div>`,
+        )
+        .join("")
+    : '<p class="empty-copy">暂无规则组数据。</p>';
+
+  const distribution = analytics.gradePointDistribution || [];
+  $("#grade-distribution").innerHTML = distribution
+    .map(
+      (band) => `
+        <div class="distribution-row">
+          <span>${escapeHtml(band.label)}</span>
+          <div><i style="width:${Math.max(0, Math.min(100, Number(band.creditShare || 0) * 100))}%"></i></div>
+          <strong>${formatNumber(Number(band.creditShare || 0) * 100, 1)}%</strong>
+          <small>${band.courseCount} 门</small>
+        </div>`,
+    )
+    .join("");
+}
+
+function calendarStatusMatches(item, filter) {
+  if (filter === "all") return true;
+  if (filter === "verified") return ["official", "window"].includes(item.status);
+  if (filter === "estimated") return ["estimated", "pending"].includes(item.status);
+  return item.status === filter;
+}
+
+function calendarDateParts(item, selectedYear) {
+  if (!item.startDate) return { month: "本年", day: "休", group: "未安排" };
+  const [startYear, startMonth, startDay] = item.startDate.split("-");
+  if (Number(startYear) < selectedYear) {
+    return { month: startMonth, day: startDay, group: "跨年启动" };
+  }
+  const endParts = item.endDate?.split("-") || [];
+  const day = item.endDate && item.endDate !== item.startDate
+    ? startMonth === endParts[1]
+      ? `${startDay}—${endParts[2]}`
+      : `${startDay}→${endParts[1]}.${endParts[2]}`
+    : startDay;
+  return { month: startMonth, day, group: `${startMonth} 月` };
+}
+
+function renderCompetitionCalendar() {
+  const payload = state.competitionCalendar;
+  if (!payload) return;
+  const selectedYear = Number($("#calendar-year").value || 2027);
+  const category = $("#calendar-category").value;
+  const status = $("#calendar-status").value;
+  const query = $("#calendar-search").value.trim().toLowerCase();
+  const direction = $("#calendar-sort").value === "desc" ? -1 : 1;
+
+  $("#calendar-updated").textContent = `资料更新于 ${payload.updatedAt}`;
+  $("#calendar-policy-count").textContent = payload.summary.policyEntries;
+  $("#calendar-unique-count").textContent = payload.summary.uniqueCompetitions;
+  $("#calendar-official-count").textContent = payload.summary.official2026;
+  $("#calendar-2027-official-count").textContent = payload.summary.official2027;
+  $("#calendar-notice").textContent = payload.notice;
+
+  const items = payload.items
+    .filter((item) => item.year === selectedYear)
+    .filter((item) => category === "all" || item.categoryId === category)
+    .filter((item) => calendarStatusMatches(item, status))
+    .filter((item) => !query || item.searchText.toLowerCase().includes(query))
+    .sort((left, right) => {
+      if (!left.startDate && !right.startDate) return 0;
+      if (!left.startDate) return 1;
+      if (!right.startDate) return -1;
+      return direction * left.sortDate.localeCompare(right.sortDate);
+    });
+
+  $("#calendar-filter-count").textContent = `${items.length} 项`;
+  if (!items.length) {
+    $("#competition-calendar").innerHTML = '<div class="calendar-empty">没有符合当前筛选条件的竞赛。</div>';
+    return;
+  }
+
+  const groups = [];
+  items.forEach((item) => {
+    const parts = calendarDateParts(item, selectedYear);
+    let group = groups.at(-1);
+    if (!group || group.name !== parts.group) {
+      group = { name: parts.group, items: [] };
+      groups.push(group);
+    }
+    group.items.push({ item, parts });
+  });
+
+  $("#competition-calendar").innerHTML = groups
+    .map(
+      (group) => `
+        <section class="calendar-month-group">
+          <header><h2>${escapeHtml(group.name)}</h2><span>${group.items.length} 项</span></header>
+          <div class="calendar-rows">
+            ${group.items
+              .map(({ item, parts }) => {
+                const basis = item.basis || item.note;
+                return `
+                  <article class="competition-row">
+                    <time class="calendar-date-ticket" datetime="${escapeHtml(item.startDate || "")}">
+                      <span>${escapeHtml(parts.month)}月</span><strong>${escapeHtml(parts.day)}</strong>
+                    </time>
+                    <div class="competition-main">
+                      <div class="competition-tags">
+                        <span>${escapeHtml(item.categoryName)}</span>
+                        ${item.policyLabels.map((label) => `<span>${escapeHtml(label)}</span>`).join("")}
+                      </div>
+                      <h3>${escapeHtml(item.name)}</h3>
+                      <p>${escapeHtml(item.displayDate)}</p>
+                      ${basis ? `<small>${escapeHtml(basis)}</small>` : ""}
+                    </div>
+                    <div class="competition-source">
+                      <span class="calendar-status is-${escapeHtml(item.status)}">${escapeHtml(item.statusName)}</span>
+                      <small>${escapeHtml(item.stage)}</small>
+                      <a href="${escapeHtml(item.source.url)}" target="_blank" rel="noopener noreferrer">查看来源</a>
+                    </div>
+                  </article>`;
+              })
+              .join("")}
+          </div>
+        </section>`,
+    )
+    .join("");
+}
+
+function renderCalendarFilters() {
+  const payload = state.competitionCalendar;
+  if (!payload) return;
+  $("#calendar-category").innerHTML = [
+    '<option value="all">全部类别</option>',
+    ...payload.categories.map(
+      (category) => `<option value="${escapeHtml(category.id)}">${escapeHtml(category.name)} (${category.count})</option>`,
+    ),
+  ].join("");
+  renderCompetitionCalendar();
+}
+
+function renderComprehensiveItemTypes() {
+  const categories = state.comprehensive?.rule?.categories || [];
+  const category = categories.find((item) => item.id === $("#comprehensive-category").value);
+  const selector = $("#comprehensive-item-type");
+  const selectedKind = selector.value;
+  const itemTypes = category?.itemTypes || [];
+  selector.innerHTML = itemTypes
+    .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`)
+    .join("");
+  if (itemTypes.some((item) => item.id === selectedKind)) selector.value = selectedKind;
+  renderComprehensiveAutoFields();
+  scheduleComprehensivePreview();
+}
+
+function currentComprehensiveDefinition() {
+  return (state.comprehensive?.rule?.items || []).find(
+    (item) => item.id === $("#comprehensive-item-type").value,
+  );
+}
+
+function comprehensiveFieldVisible(field, values) {
+  const condition = field.visibleWhen;
+  if (!condition) return true;
+  const current = String(values[condition.field] ?? "");
+  if (condition.equals !== undefined) return current === condition.equals;
+  if (condition.notEquals !== undefined) return current !== condition.notEquals;
+  if (condition.notIn) return !condition.notIn.includes(current);
+  return true;
+}
+
+function comprehensiveFieldOptions(field, values) {
+  if (!field.optionsBy) return field.options || [];
+  return field.optionsBy.values?.[String(values[field.optionsBy.field] ?? "")] || field.optionsBy.default || [];
+}
+
+function collectComprehensiveValues() {
+  return Object.fromEntries(
+    $$('[data-comprehensive-field]', $("#comprehensive-auto-fields")).map((input) => [
+      input.dataset.comprehensiveField,
+      input.type === "number" && input.value !== "" ? Number(input.value) : input.value,
+    ]),
+  );
+}
+
+function renderComprehensiveAutoFields(preserved = null) {
+  const definition = currentComprehensiveDefinition();
+  const container = $("#comprehensive-auto-fields");
+  if (!definition) {
+    container.innerHTML = "";
+    return;
+  }
+  const incoming = preserved || collectComprehensiveValues();
+  const values = { ...incoming };
+  const html = [];
+  definition.fields.forEach((field) => {
+    if (!comprehensiveFieldVisible(field, values)) return;
+    if (field.type === "select") {
+      const options = comprehensiveFieldOptions(field, values);
+      if (!options.some((item) => item.value === String(values[field.key] ?? ""))) {
+        values[field.key] = options[0]?.value || "";
+      }
+      html.push(`
+        <label class="field auto-field">
+          <span>${escapeHtml(field.label)}</span>
+          <select data-comprehensive-field="${escapeHtml(field.key)}">
+            ${options.map((item) => `<option value="${escapeHtml(item.value)}" ${item.value === String(values[field.key]) ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}
+          </select>
+        </label>`);
+      return;
+    }
+    if (values[field.key] === undefined || values[field.key] === null) {
+      values[field.key] = field.default ?? "";
+    }
+    const attributes = field.type === "number"
+      ? `type="number" min="${field.min ?? 0}" max="${field.max ?? 10000}" step="${field.step ?? 0.0001}"`
+      : `type="text" maxlength="160"`;
+    html.push(`
+      <label class="field auto-field ${field.type === "text" ? "wide-field" : ""}">
+        <span>${escapeHtml(field.label)}</span>
+        <input ${attributes} data-comprehensive-field="${escapeHtml(field.key)}" value="${escapeHtml(values[field.key])}" placeholder="${escapeHtml(field.placeholder || "")}" ${field.required ? "required" : ""} />
+        ${field.suffix ? `<small>${escapeHtml(field.suffix)}</small>` : ""}
+      </label>`);
+  });
+  container.innerHTML = html.join("");
+}
+
+function scheduleComprehensivePreview() {
+  window.clearTimeout(scheduleComprehensivePreview.timer);
+  scheduleComprehensivePreview.timer = window.setTimeout(previewComprehensiveItem, 180);
+}
+
+async function previewComprehensiveItem() {
+  const definition = currentComprehensiveDefinition();
+  if (!definition) return;
+  const preview = $("#auto-score-preview");
+  try {
+    const result = await api("/api/v1/comprehensive/preview", {
+      method: "POST",
+      body: JSON.stringify({
+        kind: definition.id,
+        values: collectComprehensiveValues(),
+        note: $("#comprehensive-note").value.trim(),
+      }),
+    });
+    preview.classList.remove("is-pending");
+    $("strong", preview).textContent = `${formatNumber(result.baseScore, 4)} × ${formatNumber(result.factor, 3)} = ${formatNumber(result.rawScore, 4)}`;
+  } catch (error) {
+    preview.classList.add("is-pending");
+    $("strong", preview).textContent = error.message;
+  }
+}
+
+function renderComprehensive() {
+  const payload = state.comprehensive;
+  if (!payload) return;
+  const { rule, profile, calculation, editable } = payload;
+  const categorySelect = $("#comprehensive-category");
+  const selectedCategory = categorySelect.value;
+  categorySelect.innerHTML = rule.categories
+    .map((category) => `<option value="${category.id}">${escapeHtml(category.name)}</option>`)
+    .join("");
+  if (rule.categories.some((category) => category.id === selectedCategory)) {
+    categorySelect.value = selectedCategory;
+  }
+  renderComprehensiveItemTypes();
+
+  $("#use-current-gpa").checked = profile.useCurrentGpa;
+  $("#manual-gpa-field").hidden = profile.useCurrentGpa;
+  $("#manual-base-gpa").value = profile.manualBaseGpa ?? "";
+  $("#current-gpa-source").textContent = `当前为 ${formatNumber(profile.currentRuleGpa, 3)}`;
+  $("#comprehensive-base-gpa").textContent = formatNumber(calculation.baseGpa, 4);
+  $("#comprehensive-addition").textContent = `+ ${formatNumber(calculation.weightedAddition, 5)}`;
+  $("#comprehensive-final").textContent = formatNumber(calculation.finalScore, 5);
+  $("#comprehensive-notice").textContent = rule.notice;
+
+  $("#comprehensive-category-strip").innerHTML = calculation.categories
+    .map(
+      (category) => `
+        <div class="category-cell ${category.limited ? "is-limited" : ""}">
+          <span>${escapeHtml(category.shortName)}</span>
+          <strong>${formatNumber(category.cappedScore, 4)}</strong>
+          <small>× ${formatNumber(category.weight, 1)} · 上限 ${formatNumber(category.cap, 4)}</small>
+        </div>`,
+    )
+    .join("");
+  $("#comprehensive-ledger-rows").innerHTML = calculation.categories
+    .map(
+      (category) => `
+        <div class="ledger-row">
+          <span>${escapeHtml(category.shortName)}<small>${formatNumber(category.cappedScore, 4)} × ${formatNumber(category.weight, 1)}</small></span>
+          <strong>+ ${formatNumber(category.weightedScore, 5)}</strong>
+        </div>`,
+    )
+    .join("");
+
+  const categoryNames = Object.fromEntries(rule.categories.map((item) => [item.id, item.shortName]));
+  $("#comprehensive-item-count").textContent = `${calculation.items.length} 项`;
+  $("#comprehensive-items").innerHTML = calculation.items.length
+    ? calculation.items
+        .map(
+          (item) => `
+            <div class="comprehensive-item ${item.included ? "" : "is-excluded"}">
+              <span class="item-category">${escapeHtml(categoryNames[item.categoryId] || "未知")}</span>
+              <div>
+                <strong>${escapeHtml(item.name)}</strong>
+                <small>${escapeHtml(item.itemType)}${item.detail ? ` · ${escapeHtml(item.detail)}` : ""}${item.note ? ` · ${escapeHtml(item.note)}` : ""}</small>
+                ${item.reason ? `<em>${escapeHtml(item.reason)}</em>` : ""}
+                ${(item.warnings || []).map((warning) => `<em>${escapeHtml(warning)}</em>`).join("")}
+              </div>
+              <span class="item-score">${formatNumber(item.baseScore, 4)} × ${formatNumber(item.factor, 3)}<b>${formatNumber(item.finalScore, 4)}</b></span>
+              ${editable ? `<button class="item-delete" type="button" data-comprehensive-id="${item.id}" aria-label="删除 ${escapeHtml(item.name)}">×</button>` : ""}
+            </div>`,
+        )
+        .join("")
+    : `<p class="empty-copy">${editable ? "还没有加分项。" : "登录后可保存自己的综测项目。"}</p>`;
+  $$('[data-comprehensive-id]').forEach((button) => {
+    button.addEventListener("click", () => deleteComprehensiveItem(Number(button.dataset.comprehensiveId)));
+  });
+  $$("input, select, button", $("#comprehensive-item-form")).forEach((element) => {
+    element.disabled = !editable;
+  });
+  $("#use-current-gpa").disabled = !editable;
+  $("#manual-base-gpa").disabled = !editable;
+  $("#save-comprehensive-settings").disabled = !editable;
 }
 
 function recommendedScore(course) {
@@ -261,6 +691,7 @@ async function switchRule() {
     state.dashboard = result.dashboard;
     renderRule();
     renderDashboard();
+    await reloadExtendedData();
     showToast("计分规则已切换");
   } catch (error) {
     showToast(error.message);
@@ -311,6 +742,7 @@ async function saveCourse() {
     });
     state.dashboard = response.dashboard;
     renderDashboard();
+    await reloadExtendedData();
     $("#course-dialog").close();
     showToast("课程已更新，所有指标已重新计算");
   } catch (error) {
@@ -351,10 +783,12 @@ function renderTermSelection() {
 }
 
 function showConnectionPanel() {
-  const connected = Boolean(state.integration?.authenticated);
-  $("#school-login-panel").hidden = connected;
-  $("#school-connected-panel").hidden = !connected;
-  if (connected) {
+  const schoolConnected = Boolean(state.integration?.schoolAuthenticated);
+  const localConnected = Boolean(state.integration?.localAuthenticated);
+  $("#school-login-panel").hidden = schoolConnected;
+  $("#school-connected-panel").hidden = !schoolConnected;
+  $("#saved-account-note").hidden = !localConnected || schoolConnected;
+  if (schoolConnected) {
     $("#connected-user").textContent = state.integration.user?.name || "北航同学";
     $("#connected-student-id").textContent = state.integration.user?.studentId || "—";
     renderTermSelection();
@@ -378,7 +812,7 @@ async function refreshLoginContext() {
     $("#school-login-error").textContent = error.message;
   } finally {
     button.disabled = false;
-    button.textContent = "登录并同步成绩";
+    button.textContent = "验证并进入";
   }
 }
 
@@ -391,7 +825,7 @@ async function openIntegrationDialog() {
     state.integration = await api("/api/v1/integration/status");
     renderIntegration();
     showConnectionPanel();
-    if (!state.integration.authenticated) await refreshLoginContext();
+    if (!state.integration.schoolAuthenticated) await refreshLoginContext();
   } catch (error) {
     $("#school-login-error").textContent = error.message;
   }
@@ -399,6 +833,7 @@ async function openIntegrationDialog() {
 
 async function loginSchool(event) {
   event.preventDefault();
+  const refreshAfterLogin = Boolean(state.integration?.localAuthenticated);
   if (!state.loginFlow) {
     await refreshLoginContext();
     if (!state.loginFlow) return;
@@ -408,7 +843,7 @@ async function loginSchool(event) {
   button.textContent = "正在验证身份…";
   $("#school-login-error").textContent = "";
   try {
-    await api("/api/v1/integration/buaa/login", {
+    const result = await api("/api/v1/integration/buaa/login", {
       method: "POST",
       body: JSON.stringify({
         flow_id: state.loginFlow.flowId,
@@ -420,26 +855,47 @@ async function loginSchool(event) {
     $("#school-password").value = "";
     state.loginFlow = null;
     state.integration = await api("/api/v1/integration/status");
+    await reloadCoreData();
     renderIntegration();
     showConnectionPanel();
-    await syncSchool(true);
+    if (refreshAfterLogin) {
+      await syncSchool(true);
+    } else if (result.hasSavedGrades) {
+      $("#integration-dialog").close();
+      showToast("已载入本地保存的数据；需要时可手动刷新学校成绩");
+    } else {
+      await syncSchool(true);
+    }
   } catch (error) {
     $("#school-password").value = "";
     $("#school-login-error").textContent = error.message;
     await refreshLoginContext();
   } finally {
     button.disabled = false;
-    button.textContent = "登录并同步成绩";
+    button.textContent = "验证并进入";
   }
 }
 
 async function reloadCoreData() {
-  [state.user, state.dashboard] = await Promise.all([
+  [state.user, state.dashboard, state.analytics, state.comprehensive] = await Promise.all([
     api("/api/v1/me"),
     api("/api/v1/dashboard"),
+    api(`/api/v1/analytics?target_gpa=${encodeURIComponent($("#target-gpa").value || 3.85)}`),
+    api("/api/v1/comprehensive"),
   ]);
   renderUser();
   renderDashboard();
+  renderAnalytics();
+  renderComprehensive();
+}
+
+async function reloadExtendedData() {
+  [state.analytics, state.comprehensive] = await Promise.all([
+    api(`/api/v1/analytics?target_gpa=${encodeURIComponent($("#target-gpa").value || 3.85)}`),
+    api("/api/v1/comprehensive"),
+  ]);
+  renderAnalytics();
+  renderComprehensive();
 }
 
 async function syncSchool(closeWhenDone = false) {
@@ -457,7 +913,6 @@ async function syncSchool(closeWhenDone = false) {
       method: "POST",
       body: JSON.stringify({ terms }),
     });
-    state.dashboard = result.dashboard;
     await reloadCoreData();
     state.integration = await api("/api/v1/integration/status");
     renderIntegration();
@@ -475,16 +930,100 @@ async function logoutSchool() {
   const button = $("#school-logout");
   button.disabled = true;
   try {
-    await api("/api/v1/integration/buaa/logout", { method: "POST" });
+    await api("/api/v1/session/logout", { method: "POST" });
     state.integration = await api("/api/v1/integration/status");
     await reloadCoreData();
     renderIntegration();
-    $("#integration-dialog").close();
-    showToast("已退出学校账户，恢复脱敏演示数据");
+    if ($("#integration-dialog").open) $("#integration-dialog").close();
+    showToast("已退出登录；已保存数据未被删除");
   } catch (error) {
     $("#school-sync-error").textContent = error.message;
   } finally {
     button.disabled = false;
+  }
+}
+
+async function calculateTarget() {
+  const button = $("#calculate-target");
+  const target = Number($("#target-gpa").value);
+  if (!Number.isFinite(target) || target < 0 || target > 4) {
+    showToast("目标 GPA 需要在 0 到 4 之间");
+    return;
+  }
+  button.disabled = true;
+  try {
+    state.analytics = await api(`/api/v1/analytics?target_gpa=${encodeURIComponent(target)}`);
+    renderAnalytics();
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveComprehensiveSettings() {
+  const button = $("#save-comprehensive-settings");
+  const useCurrentGpa = $("#use-current-gpa").checked;
+  const manualValue = $("#manual-base-gpa").value;
+  button.disabled = true;
+  $("#comprehensive-error").textContent = "";
+  try {
+    state.comprehensive = await api("/api/v1/comprehensive/settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        use_current_gpa: useCurrentGpa,
+        manual_base_gpa: manualValue === "" ? null : Number(manualValue),
+      }),
+    });
+    renderComprehensive();
+    showToast("综测基础分设置已保存");
+  } catch (error) {
+    $("#comprehensive-error").textContent = error.message;
+  } finally {
+    button.disabled = !state.comprehensive?.editable;
+  }
+}
+
+async function addComprehensiveItem(event) {
+  event.preventDefault();
+  const button = $("#add-comprehensive-item");
+  button.disabled = true;
+  $("#comprehensive-error").textContent = "";
+  try {
+    state.comprehensive = await api("/api/v1/comprehensive/items", {
+      method: "POST",
+      body: JSON.stringify({
+        kind: $("#comprehensive-item-type").value,
+        values: collectComprehensiveValues(),
+        note: $("#comprehensive-note").value.trim(),
+      }),
+    });
+    const category = $("#comprehensive-category").value;
+    const kind = $("#comprehensive-item-type").value;
+    $("#comprehensive-item-form").reset();
+    $("#comprehensive-category").value = category;
+    renderComprehensive();
+    $("#comprehensive-item-type").value = kind;
+    renderComprehensiveAutoFields({});
+    scheduleComprehensivePreview();
+    showToast("加分项已保存并重算");
+  } catch (error) {
+    $("#comprehensive-error").textContent = error.message;
+  } finally {
+    button.disabled = !state.comprehensive?.editable;
+  }
+}
+
+async function deleteComprehensiveItem(itemId) {
+  $("#comprehensive-error").textContent = "";
+  try {
+    state.comprehensive = await api(`/api/v1/comprehensive/items/${itemId}`, {
+      method: "DELETE",
+    });
+    renderComprehensive();
+    showToast("加分项已删除");
+  } catch (error) {
+    $("#comprehensive-error").textContent = error.message;
   }
 }
 
@@ -498,6 +1037,9 @@ function bindEvents() {
   ["#course-search", "#group-filter", "#status-filter"].forEach((selector) => {
     $(selector).addEventListener("input", renderCourses);
   });
+  ["#calendar-search", "#calendar-year", "#calendar-category", "#calendar-status", "#calendar-sort"].forEach(
+    (selector) => $(selector).addEventListener("input", renderCompetitionCalendar),
+  );
   $("#dialog-score-scale").addEventListener("change", updateScoreHint);
   $("#save-course").addEventListener("click", saveCourse);
   $("#calculate-scenario").addEventListener("click", calculateScenario);
@@ -512,27 +1054,55 @@ function bindEvents() {
   $("#school-login-form").addEventListener("submit", loginSchool);
   $("#school-sync").addEventListener("click", () => syncSchool(false));
   $("#school-logout").addEventListener("click", logoutSchool);
+  $("#account-logout").addEventListener("click", logoutSchool);
   $("#rule-selector").addEventListener("change", switchRule);
+  $("#calculate-target").addEventListener("click", calculateTarget);
+  $("#use-current-gpa").addEventListener("change", (event) => {
+    $("#manual-gpa-field").hidden = event.target.checked;
+  });
+  $("#comprehensive-category").addEventListener("change", renderComprehensiveItemTypes);
+  $("#comprehensive-item-type").addEventListener("change", () => {
+    renderComprehensiveAutoFields({});
+    scheduleComprehensivePreview();
+  });
+  $("#comprehensive-auto-fields").addEventListener("input", scheduleComprehensivePreview);
+  $("#comprehensive-auto-fields").addEventListener("change", (event) => {
+    if (event.target.matches("select")) {
+      renderComprehensiveAutoFields(collectComprehensiveValues());
+    }
+    scheduleComprehensivePreview();
+  });
+  $("#save-comprehensive-settings").addEventListener("click", saveComprehensiveSettings);
+  $("#comprehensive-item-form").addEventListener("submit", addComprehensiveItem);
 }
 
 async function bootstrap() {
   bindEvents();
   try {
-    const [user, dashboard, rules, integration] = await Promise.all([
+    const [user, dashboard, rules, integration, analytics, comprehensive, competitionCalendar] = await Promise.all([
       api("/api/v1/me"),
       api("/api/v1/dashboard"),
       api("/api/v1/rules"),
       api("/api/v1/integration/status"),
+      api("/api/v1/analytics?target_gpa=3.85"),
+      api("/api/v1/comprehensive"),
+      api("/api/v1/competition-calendar"),
     ]);
     state.user = user;
     state.dashboard = dashboard;
     state.rules = rules.items;
     state.integration = integration;
+    state.analytics = analytics;
+    state.comprehensive = comprehensive;
+    state.competitionCalendar = competitionCalendar;
     state.rule = await api(`/api/v1/rules/${encodeURIComponent(rules.selectedRuleId)}`);
     renderUser();
     renderDashboard();
     renderRule();
     renderIntegration();
+    renderAnalytics();
+    renderComprehensive();
+    renderCalendarFilters();
   } catch (error) {
     showToast(`初始化失败：${error.message}`);
   }

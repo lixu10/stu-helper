@@ -4,7 +4,9 @@ import os
 import hashlib
 import json
 import sqlite3
+import secrets
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.calculation import CourseResult
@@ -77,12 +79,55 @@ def init_database() -> None:
                 selected_rule_id TEXT NOT NULL,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS app_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                token_hash TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_app_sessions_expires_at
+                ON app_sessions(expires_at);
+            CREATE TABLE IF NOT EXISTS comprehensive_profiles (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                rule_id TEXT NOT NULL DEFAULT 'soft-where-2023-reference',
+                use_current_gpa INTEGER NOT NULL DEFAULT 1,
+                manual_base_gpa REAL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS comprehensive_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                kind TEXT,
+                values_json TEXT NOT NULL DEFAULT '{}',
+                category_id TEXT NOT NULL,
+                item_type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                academic_year TEXT NOT NULL DEFAULT '',
+                base_score REAL NOT NULL,
+                factor REAL NOT NULL DEFAULT 1,
+                note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_comprehensive_items_user
+                ON comprehensive_items(user_id, category_id);
             """
         )
         _ensure_column(db, "courses", "school_course_key", "TEXT")
         _ensure_column(db, "courses", "upstream_score_text", "TEXT")
         _ensure_column(db, "courses", "upstream_score_scale", "TEXT")
         _ensure_column(db, "courses", "upstream_updated_at", "TEXT")
+        _ensure_column(db, "comprehensive_items", "kind", "TEXT")
+        _ensure_column(db, "comprehensive_items", "values_json", "TEXT NOT NULL DEFAULT '{}'")
+        db.execute(
+            """
+            UPDATE comprehensive_items
+            SET kind = 'manual-' || category_id
+            WHERE kind IS NULL OR kind = ''
+            """
+        )
         _repair_inconsistent_score_scales(db)
         count = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         if count == 0:
@@ -598,3 +643,165 @@ def sync_school_grades(
         "manualPreserved": manual_preserved,
         "terms": len(grades_by_term),
     }
+
+
+def _session_digest(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def create_app_session(user_id: int, duration_days: int = 30) -> str:
+    token = secrets.token_urlsafe(48)
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(days=duration_days)
+    with connection() as db:
+        db.execute("DELETE FROM app_sessions WHERE expires_at <= ?", (now.isoformat(),))
+        db.execute(
+            """
+            INSERT INTO app_sessions(user_id, token_hash, created_at, last_seen_at, expires_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (user_id, _session_digest(token), now.isoformat(), now.isoformat(), expires_at.isoformat()),
+        )
+    return token
+
+
+def resolve_app_session(token: str | None) -> int | None:
+    if not token:
+        return None
+    now = datetime.now(UTC).isoformat()
+    with connection() as db:
+        row = db.execute(
+            """
+            SELECT user_id FROM app_sessions
+            WHERE token_hash = ? AND expires_at > ?
+            """,
+            (_session_digest(token), now),
+        ).fetchone()
+        if not row:
+            return None
+        db.execute(
+            "UPDATE app_sessions SET last_seen_at = ? WHERE token_hash = ?",
+            (now, _session_digest(token)),
+        )
+    return int(row["user_id"])
+
+
+def delete_app_session(token: str | None) -> None:
+    if not token:
+        return
+    with connection() as db:
+        db.execute("DELETE FROM app_sessions WHERE token_hash = ?", (_session_digest(token),))
+
+
+def get_comprehensive_profile(user_id: int) -> dict:
+    with connection() as db:
+        row = db.execute(
+            "SELECT * FROM comprehensive_profiles WHERE user_id = ?", (user_id,)
+        ).fetchone()
+    if not row:
+        return {
+            "rule_id": "soft-where-2023-reference",
+            "use_current_gpa": True,
+            "manual_base_gpa": None,
+        }
+    return {
+        "rule_id": row["rule_id"],
+        "use_current_gpa": bool(row["use_current_gpa"]),
+        "manual_base_gpa": row["manual_base_gpa"],
+    }
+
+
+def update_comprehensive_profile(
+    user_id: int, use_current_gpa: bool, manual_base_gpa: float | None
+) -> None:
+    with connection() as db:
+        db.execute(
+            """
+            INSERT INTO comprehensive_profiles(user_id, use_current_gpa, manual_base_gpa)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                use_current_gpa = excluded.use_current_gpa,
+                manual_base_gpa = excluded.manual_base_gpa,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (user_id, int(use_current_gpa), manual_base_gpa),
+        )
+
+
+def list_comprehensive_items(user_id: int) -> list[dict]:
+    with connection() as db:
+        rows = db.execute(
+            "SELECT * FROM comprehensive_items WHERE user_id = ? ORDER BY id", (user_id,)
+        ).fetchall()
+    items = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["values"] = json.loads(item.pop("values_json") or "{}")
+        except (TypeError, ValueError):
+            item["values"] = {}
+        items.append(item)
+    return items
+
+
+def add_comprehensive_item(user_id: int, item: dict) -> int:
+    with connection() as db:
+        return int(
+            db.execute(
+                """
+                INSERT INTO comprehensive_items(
+                    user_id, kind, values_json, category_id, item_type, name,
+                    academic_year, base_score, factor, note
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    item.get("kind") or f"manual-{item['category_id']}",
+                    json.dumps(item.get("values") or {}, ensure_ascii=False, separators=(",", ":")),
+                    item["category_id"],
+                    item["item_type"],
+                    item["name"],
+                    item["academic_year"],
+                    item["base_score"],
+                    item["factor"],
+                    item["note"],
+                ),
+            ).lastrowid
+        )
+
+
+def update_comprehensive_item(user_id: int, item_id: int, item: dict) -> None:
+    with connection() as db:
+        cursor = db.execute(
+            """
+            UPDATE comprehensive_items SET
+                kind = ?, values_json = ?, category_id = ?, item_type = ?, name = ?, academic_year = ?,
+                base_score = ?, factor = ?, note = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND user_id = ?
+            """,
+            (
+                item.get("kind") or f"manual-{item['category_id']}",
+                json.dumps(item.get("values") or {}, ensure_ascii=False, separators=(",", ":")),
+                item["category_id"],
+                item["item_type"],
+                item["name"],
+                item["academic_year"],
+                item["base_score"],
+                item["factor"],
+                item["note"],
+                item_id,
+                user_id,
+            ),
+        )
+        if cursor.rowcount == 0:
+            raise KeyError(item_id)
+
+
+def delete_comprehensive_item(user_id: int, item_id: int) -> None:
+    with connection() as db:
+        cursor = db.execute(
+            "DELETE FROM comprehensive_items WHERE id = ? AND user_id = ?",
+            (item_id, user_id),
+        )
+        if cursor.rowcount == 0:
+            raise KeyError(item_id)

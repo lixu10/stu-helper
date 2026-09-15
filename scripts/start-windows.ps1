@@ -13,6 +13,31 @@ $runtimeTemp = Join-Path $projectRoot ".runtime\tmp"
 Set-Location -LiteralPath $projectRoot
 New-Item -ItemType Directory -Force -Path $runtimeTemp | Out-Null
 
+$serviceUrl = "http://127.0.0.1:$Port"
+try {
+    $health = Invoke-RestMethod -Uri "$serviceUrl/health" -TimeoutSec 2
+    if ($health.status -eq "ok") {
+        Write-Host "Student Helper 已在运行：$serviceUrl（版本 $($health.version)）"
+        return
+    }
+} catch {
+    # No healthy Student Helper instance answered; check for an unrelated listener below.
+}
+
+$portClient = [System.Net.Sockets.TcpClient]::new()
+$portInUse = $false
+try {
+    $portClient.Connect("127.0.0.1", $Port)
+    $portInUse = $portClient.Connected
+} catch [System.Net.Sockets.SocketException] {
+    $portInUse = $false
+} finally {
+    $portClient.Dispose()
+}
+if ($portInUse) {
+    throw "端口 $Port 已被其他程序占用。请关闭占用程序，或使用 ./scripts/start-windows.ps1 -Port 8001。"
+}
+
 # Some managed Windows environments deny writes to the user TEMP directory.
 # Keep setup scratch files inside the project so venv/ensurepip remains reliable.
 $env:TEMP = $runtimeTemp
@@ -53,7 +78,7 @@ if ($Reload -and -not $NoReload) {
     $uvicornArgs += "--reload"
 }
 
-Write-Host "Student Helper 正在启动：http://127.0.0.1:$Port"
+Write-Host "Student Helper 正在启动：$serviceUrl"
 & $venvPython @uvicornArgs
 if ($LASTEXITCODE -ne 0) {
     throw "Student Helper 退出（退出码 $LASTEXITCODE）。"

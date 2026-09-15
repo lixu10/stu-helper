@@ -1,24 +1,44 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import csv
+import io
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
+from app.analytics import calculate_academic_analytics
 from app.calculation import calculate_dashboard, score_to_grade_point
+from app.comprehensive import (
+    calculate_comprehensive,
+    evaluate_item,
+    prepare_comprehensive_item,
+    public_comprehensive_rule,
+)
+from app.competition_calendar import public_competition_calendar
 from app.database import (
+    add_comprehensive_item,
+    create_app_session,
     current_user,
+    delete_app_session,
+    delete_comprehensive_item,
+    get_comprehensive_profile,
     get_selected_rule,
     init_database,
+    list_comprehensive_items,
     list_courses,
+    resolve_app_session,
     set_sync_state,
     set_selected_rule,
     sync_school_grades,
+    update_comprehensive_item,
+    update_comprehensive_profile,
     update_course,
     upsert_school_user,
 )
@@ -36,6 +56,8 @@ from app.rules import list_public_rules, public_rule
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 logger = logging.getLogger(__name__)
+APP_SESSION_COOKIE = "student_helper_app_session"
+APP_SESSION_MAX_AGE = 30 * 24 * 60 * 60
 
 
 @asynccontextmanager
@@ -47,7 +69,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Student Helper",
-    version="1.0.0",
+    version="0.2.0",
     description="北航学习成绩综合计算平台",
     lifespan=lifespan,
 )
@@ -107,13 +129,41 @@ class RuleSelectionRequest(BaseModel):
     rule_id: str = Field(min_length=3, max_length=120)
 
 
+class ComprehensiveSettingsRequest(BaseModel):
+    use_current_gpa: bool = True
+    manual_base_gpa: float | None = Field(default=None, ge=0, le=4)
+
+
+class ComprehensiveItemRequest(BaseModel):
+    kind: str = Field(min_length=3, max_length=64)
+    values: dict[str, Any] = Field(default_factory=dict)
+    note: str = Field(default="", max_length=500)
+
+    @field_validator("kind", "note")
+    @classmethod
+    def clean_comprehensive_text(cls, value: str):
+        return value.strip()
+
+
 async def _school_session(request: Request):
     return await buaa_sessions.get_session(request.cookies.get(SESSION_COOKIE))
 
 
 async def _local_user_id(request: Request) -> int:
     session = await _school_session(request)
-    return session.local_user_id if session else 1
+    if session:
+        return session.local_user_id
+    return resolve_app_session(request.cookies.get(APP_SESSION_COOKIE)) or 1
+
+
+async def _require_account(request: Request) -> int:
+    user_id = await _local_user_id(request)
+    if user_id == 1:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "account_required", "message": "请先登录学校账户"},
+        )
+    return user_id
 
 
 def _upstream_http_error(exc: BuaaUpstreamError) -> HTTPException:
@@ -140,6 +190,20 @@ async def me(request: Request):
 async def dashboard(request: Request):
     user_id = await _local_user_id(request)
     return calculate_dashboard(list_courses(user_id), rule_id=get_selected_rule(user_id))
+
+
+@app.get("/api/v1/analytics")
+async def analytics(request: Request, target_gpa: float = 3.8):
+    if target_gpa < 0 or target_gpa > 4:
+        raise HTTPException(status_code=422, detail="目标 GPA 必须在 0 到 4 之间")
+    return calculate_academic_analytics(
+        list_courses(await _local_user_id(request)), target_gpa=target_gpa
+    )
+
+
+@app.get("/api/v1/competition-calendar")
+def competition_calendar():
+    return public_competition_calendar()
 
 
 @app.get("/api/v1/courses")
@@ -214,19 +278,142 @@ async def select_rule(payload: RuleSelectionRequest, request: Request):
     }
 
 
+def _comprehensive_payload(user_id: int, editable: bool) -> dict:
+    profile = get_comprehensive_profile(user_id)
+    items = list_comprehensive_items(user_id)
+    current_dashboard = calculate_dashboard(
+        list_courses(user_id), rule_id=get_selected_rule(user_id)
+    )
+    current_gpa = current_dashboard["metrics"]["gpa"]
+    base_gpa = current_gpa if profile["use_current_gpa"] else profile["manual_base_gpa"]
+    return {
+        "editable": editable,
+        "rule": public_comprehensive_rule(),
+        "profile": {
+            "useCurrentGpa": profile["use_current_gpa"],
+            "manualBaseGpa": profile["manual_base_gpa"],
+            "currentRuleGpa": current_gpa,
+        },
+        "calculation": calculate_comprehensive(base_gpa, items),
+    }
+
+
+@app.get("/api/v1/comprehensive")
+async def comprehensive(request: Request):
+    user_id = await _local_user_id(request)
+    return _comprehensive_payload(user_id, editable=user_id != 1)
+
+
+@app.post("/api/v1/comprehensive/preview")
+def comprehensive_preview(payload: ComprehensiveItemRequest):
+    try:
+        return evaluate_item(payload.kind, payload.values)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.put("/api/v1/comprehensive/settings")
+async def comprehensive_settings(payload: ComprehensiveSettingsRequest, request: Request):
+    user_id = await _require_account(request)
+    if not payload.use_current_gpa and payload.manual_base_gpa is None:
+        raise HTTPException(status_code=422, detail="手动模式需要填写基础 GPA")
+    update_comprehensive_profile(user_id, payload.use_current_gpa, payload.manual_base_gpa)
+    return _comprehensive_payload(user_id, editable=True)
+
+
+@app.post("/api/v1/comprehensive/items")
+async def create_comprehensive_item(payload: ComprehensiveItemRequest, request: Request):
+    user_id = await _require_account(request)
+    try:
+        item = prepare_comprehensive_item(payload.kind, payload.values, payload.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    add_comprehensive_item(user_id, item)
+    return _comprehensive_payload(user_id, editable=True)
+
+
+@app.put("/api/v1/comprehensive/items/{item_id}")
+async def edit_comprehensive_item(
+    item_id: int, payload: ComprehensiveItemRequest, request: Request
+):
+    user_id = await _require_account(request)
+    try:
+        item = prepare_comprehensive_item(payload.kind, payload.values, payload.note)
+        update_comprehensive_item(user_id, item_id, item)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="综测项目不存在") from exc
+    return _comprehensive_payload(user_id, editable=True)
+
+
+@app.delete("/api/v1/comprehensive/items/{item_id}")
+async def remove_comprehensive_item(item_id: int, request: Request):
+    user_id = await _require_account(request)
+    try:
+        delete_comprehensive_item(user_id, item_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="综测项目不存在") from exc
+    return _comprehensive_payload(user_id, editable=True)
+
+
+@app.get("/api/v1/export/courses.csv")
+async def export_courses_csv(request: Request):
+    user_id = await _require_account(request)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["课程代码", "课程名称", "学期", "学分", "成绩", "成绩制", "来源"])
+    for course in list_courses(user_id):
+        writer.writerow(
+            [
+                course.code,
+                course.name,
+                course.term_code,
+                course.credits,
+                course.score_text or "",
+                course.score_scale,
+                course.source,
+            ]
+        )
+    return Response(
+        content="\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="student-helper-courses.csv"'},
+    )
+
+
+@app.get("/api/v1/export/data.json")
+async def export_data_json(request: Request):
+    user_id = await _require_account(request)
+    return {
+        "user": current_user(user_id),
+        "selectedRuleId": get_selected_rule(user_id),
+        "courses": [course.__dict__ for course in list_courses(user_id)],
+        "comprehensive": _comprehensive_payload(user_id, editable=True),
+    }
+
+
 @app.get("/api/v1/integration/status")
 async def integration_status(request: Request):
     session = await _school_session(request)
-    user = current_user(session.local_user_id if session else 1)
+    persisted_user_id = resolve_app_session(request.cookies.get(APP_SESSION_COOKIE))
+    user_id = session.local_user_id if session else (persisted_user_id or 1)
+    user = current_user(user_id)
+    local_authenticated = user_id != 1
     return {
-        "mode": "school" if session else "demo",
+        "mode": "school" if session else ("saved" if local_authenticated else "demo"),
         "authenticated": bool(session),
+        "schoolAuthenticated": bool(session),
+        "localAuthenticated": local_authenticated,
         "schoolLogin": "connected" if session else "not_connected",
         "passwordStored": False,
-        "cookiePersistence": "memory_only",
+        "dataPersisted": True,
+        "cookiePersistence": "local_session_30_days",
         "defaultTerms": list(DEFAULT_TERMS),
         "user": (
-            {"name": session.name, "studentId": session.student_id} if session else None
+            {"name": user["name"], "studentId": user["studentId"]}
+            if local_authenticated
+            else None
         ),
         "sync": user.get("sync"),
         "upstream": {
@@ -235,9 +422,13 @@ async def integration_status(request: Request):
             "fields": ["year", "xq"],
         },
         "message": (
-            "已连接北航统一认证；学校 Cookie 只保存在当前服务进程内。"
+            "已连接北航统一认证；数据已持久化，密码不会保存。"
             if session
-            else "当前显示脱敏演示数据，连接学校账户后可同步本人成绩。"
+            else (
+                "已从本地数据库恢复个人数据；需要刷新学校成绩时再连接统一认证。"
+                if local_authenticated
+                else "当前显示脱敏演示数据，连接学校账户后可同步本人成绩。"
+            )
         ),
     }
 
@@ -273,11 +464,22 @@ async def school_login(payload: SchoolLoginRequest, response: Response):
         max_age=8 * 60 * 60,
         path="/",
     )
+    response.set_cookie(
+        APP_SESSION_COOKIE,
+        create_app_session(session.local_user_id),
+        httponly=True,
+        secure=os.getenv("STUDENT_HELPER_COOKIE_SECURE", "0") == "1",
+        samesite="strict",
+        max_age=APP_SESSION_MAX_AGE,
+        path="/",
+    )
     response.headers["Cache-Control"] = "no-store"
+    saved_user = current_user(session.local_user_id)
     return {
         "status": "authenticated",
         "user": {"name": session.name, "studentId": session.student_id},
         "passwordStored": False,
+        "hasSavedGrades": bool((saved_user.get("sync") or {}).get("last_sync_at")),
     }
 
 
@@ -329,6 +531,13 @@ async def school_sync(payload: SchoolSyncRequest, request: Request):
 @app.post("/api/v1/integration/buaa/logout")
 async def school_logout(request: Request, response: Response):
     await buaa_sessions.logout(request.cookies.get(SESSION_COOKIE))
+    delete_app_session(request.cookies.get(APP_SESSION_COOKIE))
     response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(APP_SESSION_COOKIE, path="/")
     response.headers["Cache-Control"] = "no-store"
     return {"status": "logged_out"}
+
+
+@app.post("/api/v1/session/logout")
+async def account_logout(request: Request, response: Response):
+    return await school_logout(request, response)
