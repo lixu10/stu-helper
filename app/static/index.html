@@ -10,7 +10,7 @@
     />
     <title>Student Helper</title>
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260915k" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260915l" />
   </head>
   <body>
     <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -41,6 +41,10 @@
           <button class="nav-item" data-view="comprehensive" type="button">
             <span class="nav-icon" aria-hidden="true">＋</span>
             综合测评
+          </button>
+          <button class="nav-item" data-view="recommendation" type="button">
+            <span class="nav-icon" aria-hidden="true">◎</span>
+            推免定位
           </button>
           <button class="nav-item" data-view="calendar" type="button">
             <span class="nav-icon" aria-hidden="true">▦</span>
@@ -334,6 +338,94 @@
           </div>
         </section>
 
+        <section class="view" data-view-panel="recommendation" aria-labelledby="recommendation-title">
+          <header class="page-header recommendation-page-header">
+            <div>
+              <p class="context-line">2023 级拟推免名单 · 32 人匿名样本</p>
+              <h1 id="recommendation-title">推免定位</h1>
+            </div>
+            <span class="reference-chip" id="recommendation-source-date">名单发布于 —</span>
+          </header>
+
+          <section class="recommendation-board" aria-labelledby="recommendation-band-title">
+            <div class="recommendation-outlook">
+              <span>历史对标位置</span>
+              <h2 id="recommendation-band-title">正在计算</h2>
+              <p id="recommendation-band-message">—</p>
+            </div>
+            <div class="recommendation-score">
+              <span>情景综合成绩</span>
+              <strong id="recommendation-score">—</strong>
+              <small id="recommendation-rank">—</small>
+            </div>
+            <div class="recommendation-score">
+              <span>去年名单下沿</span>
+              <strong id="recommendation-floor">—</strong>
+              <small id="recommendation-floor-gap">—</small>
+            </div>
+            <div class="recommendation-score">
+              <span>名单人数 / 排名人数</span>
+              <strong id="recommendation-rate">—</strong>
+              <small>只是总体基准，不是个人概率</small>
+            </div>
+          </section>
+
+          <form class="recommendation-controls" id="recommendation-controls">
+            <label><span>预计最终 GPA</span><input id="recommendation-gpa" type="number" min="0" max="4" step="0.001" /></label>
+            <span class="recommendation-plus" aria-hidden="true">+</span>
+            <label><span>预计综测加分</span><input id="recommendation-addition" type="number" min="0" max="0.5" step="0.001" /></label>
+            <span class="recommendation-equals" aria-hidden="true">=</span>
+            <div><span>预计综合成绩</span><strong id="recommendation-preview">—</strong></div>
+            <button class="button primary" type="submit">重新分析</button>
+            <button class="text-button" id="reset-recommendation" type="button">恢复当前数据</button>
+          </form>
+
+          <section class="benchmark-panel" aria-labelledby="benchmark-title">
+            <div class="section-heading compact-heading">
+              <h2 id="benchmark-title">去年入围分布尺</h2>
+              <span>综合成绩为主要排序指标</span>
+            </div>
+            <div class="benchmark-ruler" id="benchmark-ruler"></div>
+          </section>
+
+          <section class="recommendation-indicators" id="recommendation-indicators" aria-label="推免定位指标"></section>
+
+          <div class="recommendation-grid">
+            <section class="recommendation-section" aria-labelledby="recommendation-targets-title">
+              <div class="section-heading compact-heading">
+                <h2 id="recommendation-targets-title">目标差距</h2>
+                <span>三种提升路径</span>
+              </div>
+              <div id="recommendation-targets"></div>
+            </section>
+            <section class="recommendation-section" aria-labelledby="recommendation-scenarios-title">
+              <div class="section-heading compact-heading">
+                <h2 id="recommendation-scenarios-title">情景比较</h2>
+                <span>同一历史样本口径</span>
+              </div>
+              <div class="scenario-matrix" id="recommendation-scenarios"></div>
+            </section>
+          </div>
+
+          <div class="recommendation-grid">
+            <section class="recommendation-section" aria-labelledby="recommendation-actions-title">
+              <div class="section-heading compact-heading">
+                <h2 id="recommendation-actions-title">优先提升什么</h2>
+                <span id="recommendation-completeness">—</span>
+              </div>
+              <div class="recommendation-actions" id="recommendation-actions"></div>
+            </section>
+            <section class="recommendation-section methodology-section" aria-labelledby="recommendation-method-title">
+              <div class="section-heading compact-heading">
+                <h2 id="recommendation-method-title">数据边界</h2>
+                <span id="recommendation-correlation">—</span>
+              </div>
+              <p id="recommendation-limitation"></p>
+              <dl id="recommendation-source-facts"></dl>
+            </section>
+          </div>
+        </section>
+
         <section class="view" data-view-panel="comprehensive" aria-labelledby="comprehensive-title">
           <header class="page-header">
             <div>
@@ -497,6 +589,7 @@
         <button data-view="courses" type="button"><span>≡</span>成绩</button>
         <button data-view="analysis" type="button"><span>⌇</span>分析</button>
         <button data-view="comprehensive" type="button"><span>＋</span>综测</button>
+        <button data-view="recommendation" type="button"><span>◎</span>推免</button>
         <button data-view="calendar" type="button"><span>▦</span>竞赛</button>
         <button data-view="rules" type="button"><span>◇</span>规则</button>
       </nav>
@@ -608,6 +701,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/static/app.js?v=20260915k" defer></script>
+    <script src="/static/app.js?v=20260915l" defer></script>
   </body>
 </html>

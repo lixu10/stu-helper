@@ -7,6 +7,7 @@ const state = {
   integration: null,
   analytics: null,
   comprehensive: null,
+  recommendation: null,
   competitionCalendar: null,
   loginFlow: null,
 };
@@ -250,6 +251,150 @@ function renderAnalytics() {
         </div>`,
     )
     .join("");
+}
+
+function recommendationProjectionText(projection) {
+  if (!projection) return "暂无课程测算";
+  if (projection.status === "already_met") return "按当前成绩已经达到";
+  if (projection.status === "reachable") {
+    return `剩余 ${formatNumber(projection.pendingCredits, 1)} 学分平均约 ${formatNumber(projection.requiredAverageScore, 1)} 分`;
+  }
+  if (projection.status === "unreachable") return "仅靠剩余课程无法达到";
+  return "没有待修课程可用于提升";
+}
+
+function updateRecommendationPreview() {
+  const gpa = Number($("#recommendation-gpa").value);
+  const addition = Number($("#recommendation-addition").value);
+  $("#recommendation-preview").textContent = Number.isFinite(gpa) && Number.isFinite(addition)
+    ? formatNumber(gpa + addition, 4)
+    : "—";
+}
+
+function renderRecommendation(preserveInputs = false) {
+  const payload = state.recommendation;
+  if (!payload) return;
+  const { source, reference, current, completeness, methodology } = payload;
+  if (!preserveInputs) {
+    $("#recommendation-gpa").value = payload.actual.academicGpa ?? "";
+    $("#recommendation-addition").value = payload.actual.addition ?? 0;
+  }
+  updateRecommendationPreview();
+
+  $("#recommendation-source-date").textContent = `名单发布于 ${source.publishedAt}`;
+  $("#recommendation-band-title").textContent = current.band.label;
+  $("#recommendation-band-message").textContent = current.band.message;
+  $(".recommendation-board").dataset.tone = current.band.tone;
+  $("#recommendation-score").textContent = formatNumber(current.comprehensiveScore, 4);
+  $("#recommendation-rank").textContent = current.position.sampleRank
+    ? `去年名单内约第 ${current.position.sampleRankLabel} / ${current.position.sampleSize}`
+    : `低于去年 ${current.position.sampleSize} 人名单下沿`;
+  $("#recommendation-floor").textContent = formatNumber(reference.comprehensive.min, 2);
+  $("#recommendation-floor-gap").textContent = current.gapToHistoricalFloor
+    ? `还差 ${formatNumber(current.gapToHistoricalFloor, 4)}`
+    : "当前情景已达到";
+  $("#recommendation-rate").textContent = `${source.listedCount} / ${source.rankingPopulation}`;
+
+  const domainMin = Math.min(reference.comprehensive.min, current.comprehensiveScore) - 0.01;
+  const domainMax = Math.max(reference.comprehensive.max, current.comprehensiveScore) + 0.01;
+  const position = (value) => Math.max(0, Math.min(100, ((value - domainMin) / (domainMax - domainMin)) * 100));
+  const marker = (key, label, value) => `
+    <span class="benchmark-marker is-${key}" style="left:${position(value)}%">
+      <i></i><b>${escapeHtml(label)}</b><small>${formatNumber(value, 3)}</small>
+    </span>`;
+  $("#benchmark-ruler").innerHTML = `
+    <div class="benchmark-line">
+      <span class="benchmark-middle" style="left:${position(reference.comprehensive.q1)}%;width:${position(reference.comprehensive.q3) - position(reference.comprehensive.q1)}%"></span>
+      ${marker("min", "下沿", reference.comprehensive.min)}
+      ${marker("q1", "下四分位", reference.comprehensive.q1)}
+      ${marker("median", "中位", reference.comprehensive.median)}
+      ${marker("q3", "上四分位", reference.comprehensive.q3)}
+      ${marker("max", "最高", reference.comprehensive.max)}
+      ${marker("you", "你", current.comprehensiveScore)}
+    </div>`;
+
+  const indicators = [
+    ["综合成绩分位", `${formatNumber(current.position.percentile, 1)}%`, "在去年拟推免名单样本中"],
+    ["GPA 分位", `${formatNumber(current.academicPosition.percentile, 1)}%`, `去年中位 ${formatNumber(reference.academicGpa.median, 3)}`],
+    ["综测加分分位", `${formatNumber(current.additionPosition.percentile, 1)}%`, `去年中位 +${formatNumber(reference.addition.median, 3)}`],
+    ["成绩完整度", `${formatNumber(completeness.ratio * 100, 1)}%`, completeness.label],
+  ];
+  $("#recommendation-indicators").innerHTML = indicators
+    .map(([label, value, note]) => `<div><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`)
+    .join("");
+
+  $("#recommendation-targets").innerHTML = payload.targets
+    .map(
+      (target) => `
+        <article class="recommendation-target ${target.gap ? "" : "is-met"}">
+          <header><div><strong>${escapeHtml(target.label)}</strong><span>${formatNumber(target.score, 4)}</span></div><b>${target.gap ? `差 ${formatNumber(target.gap, 4)}` : "已达到"}</b></header>
+          <div class="target-paths">
+            <p><span>只提 GPA</span><strong>${formatNumber(target.academicGpaNeeded, 4)}</strong><small>${recommendationProjectionText(target.courseProjection)}</small></p>
+            <p><span>只提综测</span><strong>+ ${formatNumber(target.additionNeeded, 4)}</strong><small>需要真实成果并通过审核</small></p>
+            <p><span>均衡提升</span><strong>${formatNumber(target.balancedAcademicGpa, 4)} + ${formatNumber(target.balancedAddition, 4)}</strong><small>将当前差距各分担一半</small></p>
+          </div>
+        </article>`,
+    )
+    .join("");
+
+  $("#recommendation-scenarios").innerHTML = `
+    <div class="scenario-matrix-row is-heading"><span>情景</span><span>GPA</span><span>综测</span><span>综合</span><span>位置</span></div>
+    ${payload.scenarios
+      .map(
+        (scenario) => `
+          <div class="scenario-matrix-row">
+            <strong>${escapeHtml(scenario.label)}</strong>
+            <span>${formatNumber(scenario.academicGpa, 3)}</span>
+            <span>+${formatNumber(scenario.addition, 3)}</span>
+            <b>${formatNumber(scenario.comprehensiveScore, 3)}</b>
+            <small class="is-${escapeHtml(scenario.band.tone)}">${escapeHtml(scenario.band.label)}</small>
+          </div>`,
+      )
+      .join("")}`;
+
+  const nextTarget = payload.targets.find((target) => target.gap > 0) || payload.targets.at(-1);
+  const leverage = payload.academicLeverage || [];
+  const headroom = payload.comprehensiveHeadroom || [];
+  $("#recommendation-completeness").textContent = `${formatNumber(completeness.includedCredits, 1)} 已计入 / ${formatNumber(completeness.remainingCredits, 1)} 待修学分`;
+  $("#recommendation-actions").innerHTML = `
+    <article><b>01</b><div><strong>先对准 ${escapeHtml(nextTarget.label)}</strong><p>当前差距 ${formatNumber(nextTarget.gap, 4)}；GPA 不变时综测加分需到 ${formatNumber(nextTarget.additionNeeded, 4)}。</p></div></article>
+    <article><b>02</b><div><strong>把精力放在高学分待修课</strong><p>${leverage.length ? leverage.map((item) => `${escapeHtml(item.name)}（${formatNumber(item.credits, 1)} 学分）`).join("、") : "当前没有规则内待修课程。"}</p></div></article>
+    <article><b>03</b><div><strong>只录入能够审核的综测成果</strong><p>${headroom.slice(0, 2).map((item) => `${escapeHtml(item.name)}理论剩余折合空间 ${formatNumber(item.theoreticalWeightedHeadroom, 4)}`).join("；") || "各类别已无理论封顶空间。"}</p></div></article>`;
+
+  $("#recommendation-correlation").textContent = `GPA 与综合成绩相关系数 ${formatNumber(reference.gpaComprehensiveCorrelation, 3)}`;
+  $("#recommendation-limitation").textContent = methodology.limitation;
+  $("#recommendation-source-facts").innerHTML = `
+    <div><dt>名单口径</dt><dd>${source.cohort}，${source.listedCount} 人</dd></div>
+    <div><dt>综合排名</dt><dd>列至第 ${source.lastPublishedRank}，名单未含第 ${source.missingPublishedRanks.join("、")} 名</dd></div>
+    <div><dt>综合成绩</dt><dd>${formatNumber(reference.comprehensive.min, 2)}–${formatNumber(reference.comprehensive.max, 2)}，中位 ${formatNumber(reference.comprehensive.median, 3)}</dd></div>
+    <div><dt>GPA</dt><dd>${formatNumber(reference.academicGpa.min, 2)}–${formatNumber(reference.academicGpa.max, 2)}，中位 ${formatNumber(reference.academicGpa.median, 3)}</dd></div>
+    <div><dt>综测加分</dt><dd>${formatNumber(reference.addition.min, 2)}–${formatNumber(reference.addition.max, 2)}，中位 ${formatNumber(reference.addition.median, 3)}</dd></div>
+    <div><dt>隐私处理</dt><dd>未保存姓名和学号</dd></div>`;
+}
+
+async function calculateRecommendation(event) {
+  event?.preventDefault();
+  const gpa = Number($("#recommendation-gpa").value);
+  const addition = Number($("#recommendation-addition").value);
+  if (!Number.isFinite(gpa) || gpa < 0 || gpa > 4 || !Number.isFinite(addition) || addition < 0 || addition > 0.5) {
+    showToast("GPA 需在 0–4，综测加分需在 0–0.5");
+    return;
+  }
+  try {
+    state.recommendation = await api(`/api/v1/recommendation-analysis?gpa=${encodeURIComponent(gpa)}&addition=${encodeURIComponent(addition)}`);
+    renderRecommendation(true);
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+async function resetRecommendation() {
+  try {
+    state.recommendation = await api("/api/v1/recommendation-analysis");
+    renderRecommendation(false);
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 function calendarStatusMatches(item, filter) {
@@ -883,25 +1028,29 @@ async function loginSchool(event) {
 }
 
 async function reloadCoreData() {
-  [state.user, state.dashboard, state.analytics, state.comprehensive] = await Promise.all([
+  [state.user, state.dashboard, state.analytics, state.comprehensive, state.recommendation] = await Promise.all([
     api("/api/v1/me"),
     api("/api/v1/dashboard"),
     api(`/api/v1/analytics?target_gpa=${encodeURIComponent($("#target-gpa").value || 3.85)}`),
     api("/api/v1/comprehensive"),
+    api("/api/v1/recommendation-analysis"),
   ]);
   renderUser();
   renderDashboard();
   renderAnalytics();
   renderComprehensive();
+  renderRecommendation();
 }
 
 async function reloadExtendedData() {
-  [state.analytics, state.comprehensive] = await Promise.all([
+  [state.analytics, state.comprehensive, state.recommendation] = await Promise.all([
     api(`/api/v1/analytics?target_gpa=${encodeURIComponent($("#target-gpa").value || 3.85)}`),
     api("/api/v1/comprehensive"),
+    api("/api/v1/recommendation-analysis"),
   ]);
   renderAnalytics();
   renderComprehensive();
+  renderRecommendation();
 }
 
 async function syncSchool(closeWhenDone = false) {
@@ -1108,6 +1257,10 @@ function bindEvents() {
   $("#account-logout").addEventListener("click", logoutSchool);
   $("#rule-selector").addEventListener("change", switchRule);
   $("#calculate-target").addEventListener("click", calculateTarget);
+  $("#recommendation-controls").addEventListener("submit", calculateRecommendation);
+  $("#recommendation-gpa").addEventListener("input", updateRecommendationPreview);
+  $("#recommendation-addition").addEventListener("input", updateRecommendationPreview);
+  $("#reset-recommendation").addEventListener("click", resetRecommendation);
   $("#use-current-gpa").addEventListener("change", (event) => {
     $("#manual-gpa-field").hidden = event.target.checked;
   });
@@ -1130,13 +1283,14 @@ function bindEvents() {
 async function bootstrap() {
   bindEvents();
   try {
-    const [user, dashboard, rules, integration, analytics, comprehensive, competitionCalendar] = await Promise.all([
+    const [user, dashboard, rules, integration, analytics, comprehensive, recommendation, competitionCalendar] = await Promise.all([
       api("/api/v1/me"),
       api("/api/v1/dashboard"),
       api("/api/v1/rules"),
       api("/api/v1/integration/status"),
       api("/api/v1/analytics?target_gpa=3.85"),
       api("/api/v1/comprehensive"),
+      api("/api/v1/recommendation-analysis"),
       api("/api/v1/competition-calendar"),
     ]);
     state.user = user;
@@ -1145,6 +1299,7 @@ async function bootstrap() {
     state.integration = integration;
     state.analytics = analytics;
     state.comprehensive = comprehensive;
+    state.recommendation = recommendation;
     state.competitionCalendar = competitionCalendar;
     state.rule = await api(`/api/v1/rules/${encodeURIComponent(rules.selectedRuleId)}`);
     renderUser();
@@ -1153,6 +1308,7 @@ async function bootstrap() {
     renderIntegration();
     renderAnalytics();
     renderComprehensive();
+    renderRecommendation();
     renderCalendarFilters();
   } catch (error) {
     showToast(`初始化失败：${error.message}`);

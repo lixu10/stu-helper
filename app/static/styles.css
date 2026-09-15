@@ -1133,6 +1133,420 @@ tbody tr:hover {
   line-height: 1.75;
 }
 
+.recommendation-page-header {
+  margin-bottom: 18px;
+}
+
+.recommendation-board {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.35fr) repeat(3, minmax(145px, 0.7fr));
+  margin-bottom: 12px;
+  overflow: hidden;
+  border-bottom: 4px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--buaa-blue);
+  color: #fff;
+}
+
+.recommendation-board[data-tone="strong"] {
+  border-bottom-color: var(--signal);
+}
+
+.recommendation-board[data-tone="danger"] {
+  border-bottom-color: var(--danger);
+}
+
+.recommendation-outlook,
+.recommendation-score {
+  display: grid;
+  align-content: center;
+  min-height: 132px;
+  padding: 22px;
+  border-right: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.recommendation-score:last-child {
+  border-right: 0;
+}
+
+.recommendation-board span,
+.recommendation-board small {
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 9px;
+}
+
+.recommendation-outlook h2 {
+  margin: 7px 0 4px;
+  font-size: 23px;
+}
+
+.recommendation-outlook p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 10px;
+}
+
+.recommendation-score {
+  gap: 5px;
+}
+
+.recommendation-score strong {
+  font-family: var(--numeric);
+  font-size: 27px;
+  font-weight: 600;
+}
+
+.recommendation-controls {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) auto minmax(130px, 1fr) auto minmax(130px, 0.8fr) auto auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 18px;
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+
+.recommendation-controls label,
+.recommendation-controls > div {
+  display: grid;
+  gap: 5px;
+}
+
+.recommendation-controls label > span,
+.recommendation-controls > div > span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.recommendation-controls input {
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--numeric);
+}
+
+.recommendation-controls > div > strong {
+  min-height: 38px;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--flight-blue);
+  font-family: var(--numeric);
+  font-size: 17px;
+}
+
+.recommendation-plus,
+.recommendation-equals {
+  align-self: end;
+  padding-bottom: 9px;
+  color: var(--muted);
+  font-family: var(--numeric);
+}
+
+.benchmark-panel,
+.recommendation-section {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+
+.benchmark-panel {
+  padding: 18px 20px 24px;
+}
+
+.benchmark-ruler {
+  min-height: 106px;
+  padding: 43px 24px 0;
+}
+
+.benchmark-line {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: #dce5ec;
+}
+
+.benchmark-middle {
+  position: absolute;
+  top: 0;
+  height: 8px;
+  background: #9dc7df;
+}
+
+.benchmark-marker {
+  position: absolute;
+  top: -5px;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.benchmark-marker i {
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--buaa-blue);
+}
+
+.benchmark-marker b {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 500;
+}
+
+.benchmark-marker small {
+  color: var(--ink);
+  font-family: var(--numeric);
+  font-size: 9px;
+}
+
+.benchmark-marker.is-q1 b,
+.benchmark-marker.is-q3 b {
+  display: none;
+}
+
+.benchmark-marker.is-you {
+  top: -36px;
+  z-index: 2;
+}
+
+.benchmark-marker.is-you i {
+  height: 49px;
+  background: var(--warning);
+}
+
+.benchmark-marker.is-you b,
+.benchmark-marker.is-you small {
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.recommendation-indicators {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 14px 0 18px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+
+.recommendation-indicators > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 15px 18px;
+  border-right: 1px solid var(--line);
+}
+
+.recommendation-indicators > div:last-child {
+  border-right: 0;
+}
+
+.recommendation-indicators span,
+.recommendation-indicators small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.recommendation-indicators strong {
+  font-family: var(--numeric);
+  font-size: 21px;
+}
+
+.recommendation-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 18px;
+  margin-bottom: 18px;
+  align-items: start;
+}
+
+.recommendation-section {
+  overflow: hidden;
+}
+
+.recommendation-section > .section-heading {
+  padding: 14px 17px;
+  border-bottom: 1px solid var(--line);
+  background: var(--soft-blue);
+}
+
+.recommendation-target {
+  padding: 15px 17px;
+  border-bottom: 1px solid var(--line);
+}
+
+.recommendation-target:last-child {
+  border-bottom: 0;
+}
+
+.recommendation-target > header,
+.recommendation-target > header > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.recommendation-target > header {
+  justify-content: space-between;
+}
+
+.recommendation-target > header strong {
+  font-size: 11px;
+}
+
+.recommendation-target > header span,
+.recommendation-target > header b {
+  font-family: var(--numeric);
+  font-size: 9px;
+}
+
+.recommendation-target > header span {
+  color: var(--muted);
+}
+
+.recommendation-target > header b {
+  color: var(--warning);
+}
+
+.recommendation-target.is-met > header b {
+  color: var(--signal);
+}
+
+.target-paths {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.target-paths p {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding-left: 9px;
+  border-left: 2px solid var(--line);
+}
+
+.target-paths span,
+.target-paths small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.target-paths strong {
+  font-family: var(--numeric);
+  font-size: 11px;
+}
+
+.scenario-matrix-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 1fr) repeat(3, 54px) minmax(76px, 0.8fr);
+  align-items: center;
+  min-height: 48px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--numeric);
+  font-size: 9px;
+}
+
+.scenario-matrix-row:last-child {
+  border-bottom: 0;
+}
+
+.scenario-matrix-row.is-heading {
+  min-height: 35px;
+  color: var(--muted);
+  font-family: var(--text);
+  font-size: 8px;
+}
+
+.scenario-matrix-row small {
+  justify-self: start;
+  padding: 3px 5px;
+  border-radius: 3px;
+  background: var(--soft-warning);
+  color: var(--warning);
+}
+
+.scenario-matrix-row small.is-strong {
+  background: var(--soft-green);
+  color: var(--signal);
+}
+
+.scenario-matrix-row small.is-danger {
+  background: #f9e8e6;
+  color: var(--danger);
+}
+
+.recommendation-actions article {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  padding: 15px 17px;
+  border-bottom: 1px solid var(--line);
+}
+
+.recommendation-actions article:last-child {
+  border-bottom: 0;
+}
+
+.recommendation-actions article > b {
+  color: var(--flight-blue);
+  font-family: var(--numeric);
+  font-size: 10px;
+}
+
+.recommendation-actions strong {
+  font-size: 11px;
+}
+
+.recommendation-actions p,
+.methodology-section > p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.65;
+}
+
+.methodology-section > p {
+  padding: 15px 17px;
+  border-bottom: 1px solid var(--line);
+  margin: 0;
+}
+
+#recommendation-source-facts {
+  margin: 0;
+}
+
+#recommendation-source-facts > div {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  gap: 10px;
+  padding: 10px 17px;
+  border-bottom: 1px solid var(--line);
+  font-size: 9px;
+}
+
+#recommendation-source-facts > div:last-child {
+  border-bottom: 0;
+}
+
+#recommendation-source-facts dt {
+  color: var(--muted);
+}
+
+#recommendation-source-facts dd {
+  margin: 0;
+}
+
 .calendar-page-header {
   margin-bottom: 18px;
 }
@@ -2519,6 +2933,10 @@ dialog::backdrop {
   .comprehensive-ledger {
     position: static;
   }
+
+  .recommendation-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 820px) {
@@ -2569,7 +2987,7 @@ dialog::backdrop {
     left: 0;
     z-index: 30;
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(7, 1fr);
     height: 64px;
     border-top: 1px solid var(--line);
     background: rgba(255, 255, 255, 0.97);
@@ -2662,6 +3080,19 @@ dialog::backdrop {
     justify-items: start;
     text-align: left;
   }
+
+  .recommendation-board {
+    grid-template-columns: minmax(220px, 1.2fr) repeat(3, minmax(120px, 0.7fr));
+  }
+
+  .recommendation-controls {
+    grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1fr) auto minmax(120px, 0.8fr);
+  }
+
+  .recommendation-controls .button,
+  .recommendation-controls .text-button {
+    grid-column: span 1;
+  }
 }
 
 @media (max-width: 600px) {
@@ -2680,6 +3111,78 @@ dialog::backdrop {
 
   .page-header-side {
     justify-items: start;
+  }
+
+  .recommendation-board {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .recommendation-outlook {
+    grid-column: 1 / -1;
+    min-height: 112px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  }
+
+  .recommendation-score {
+    min-height: 100px;
+    padding: 16px;
+  }
+
+  .recommendation-score:last-child {
+    grid-column: 1 / -1;
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+  }
+
+  .recommendation-controls {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: end;
+  }
+
+  .recommendation-controls .recommendation-equals {
+    display: none;
+  }
+
+  .recommendation-controls > div,
+  .recommendation-controls .button {
+    grid-column: span 1;
+  }
+
+  .recommendation-controls .text-button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .benchmark-ruler {
+    overflow-x: auto;
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .benchmark-line {
+    min-width: 560px;
+  }
+
+  .recommendation-indicators {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .recommendation-indicators > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .recommendation-indicators > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .target-paths {
+    grid-template-columns: 1fr;
+  }
+
+  .scenario-matrix-row {
+    grid-template-columns: minmax(72px, 1fr) repeat(3, 43px) minmax(68px, 0.75fr);
+    padding: 0 10px;
+    font-size: 8px;
   }
 
   .regret-heading {

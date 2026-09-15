@@ -54,6 +54,7 @@ from app.integrations.buaa import (
     BuaaUpstreamError,
     buaa_sessions,
 )
+from app.recommendation_analysis import analyze_recommendation
 from app.rules import list_public_rules, public_rule
 
 
@@ -203,6 +204,67 @@ async def analytics(request: Request, target_gpa: float = 3.8):
     return calculate_academic_analytics(
         list_courses(await _local_user_id(request)), target_gpa=target_gpa
     )
+
+
+@app.get("/api/v1/recommendation-analysis")
+async def recommendation_analysis(
+    request: Request,
+    gpa: float | None = None,
+    addition: float | None = None,
+):
+    user_id = await _local_user_id(request)
+    courses = list_courses(user_id)
+    dashboard_result = calculate_dashboard(courses, rule_id=get_selected_rule(user_id))
+    actual_gpa = dashboard_result["metrics"]["gpa"]
+    if actual_gpa is None and gpa is None:
+        raise HTTPException(status_code=422, detail="当前还没有可用于分析的 GPA")
+    comprehensive_result = calculate_comprehensive(
+        actual_gpa, list_comprehensive_items(user_id)
+    )
+    actual_addition = float(comprehensive_result["weightedAddition"] or 0)
+    scenario_gpa = float(gpa) if gpa is not None else float(actual_gpa)
+    scenario_addition = float(addition) if addition is not None else actual_addition
+    try:
+        result = analyze_recommendation(
+            scenario_gpa,
+            scenario_addition,
+            included_credits=float(dashboard_result["metrics"]["includedCredits"] or 0),
+            remaining_credits=float(dashboard_result["futureRange"]["remainingCredits"] or 0),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    result["actual"] = {
+        "academicGpa": actual_gpa,
+        "addition": round(actual_addition, 4),
+        "comprehensiveScore": round(float(actual_gpa or 0) + actual_addition, 4),
+        "isScenario": gpa is not None or addition is not None,
+    }
+    for target in result["targets"]:
+        target["courseProjection"] = calculate_academic_analytics(
+            courses, target_gpa=target["academicGpaNeeded"]
+        )["target"]
+    result["academicLeverage"] = calculate_academic_analytics(
+        courses, target_gpa=scenario_gpa
+    )["opportunities"][:3]
+    result["comprehensiveHeadroom"] = sorted(
+        [
+            {
+                "id": category["id"],
+                "name": category["shortName"],
+                "currentWeightedScore": category["weightedScore"],
+                "theoreticalWeightedHeadroom": round(
+                    max(0.0, category["cap"] - category["cappedScore"])
+                    * category["weight"],
+                    5,
+                ),
+            }
+            for category in comprehensive_result["categories"]
+        ],
+        key=lambda item: item["theoreticalWeightedHeadroom"],
+        reverse=True,
+    )
+    return result
 
 
 @app.get("/api/v1/competition-calendar")
