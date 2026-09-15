@@ -1,0 +1,15 @@
+services:
+  student-helper:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      STUDENT_HELPER_ENV: production
+      STUDENT_HELPER_DB: /app/data/student-helper.db
+      STUDENT_HELPER_COOKIE_SECURE: ${STUDENT_HELPER_COOKIE_SECURE:-0}
+    volumes:
+      - student-helper-data:/app/data
+
+volumes:
+  student-helper-data:

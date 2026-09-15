@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0f2f5a" />
+    <meta
+      name="description"
+      content="Student Helper - 北航成绩与推免绩点计算工作台"
+    />
+    <title>Student Helper</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260915f" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="主导航">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">SH</span>
+          <span>
+            <strong>Student Helper</strong>
+            <small>学业计算工作台</small>
+          </span>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item is-active" data-view="overview" type="button">
+            <span class="nav-icon" aria-hidden="true">⌁</span>
+            学业总览
+          </button>
+          <button class="nav-item" data-view="courses" type="button">
+            <span class="nav-icon" aria-hidden="true">≡</span>
+            课程成绩
+          </button>
+          <button class="nav-item" data-view="rules" type="button">
+            <span class="nav-icon" aria-hidden="true">◇</span>
+            计分规则
+          </button>
+        </nav>
+
+        <div class="sidebar-note" id="connection-card">
+          <span class="status-dot"></span>
+          <div>
+            <strong id="connection-title">脱敏演示模式</strong>
+            <span id="connection-caption">学校账户未连接</span>
+          </div>
+        </div>
+
+        <div class="sidebar-user">
+          <span class="avatar" aria-hidden="true">航</span>
+          <span>
+            <strong id="sidebar-user-name">正在读取</strong>
+            <small id="sidebar-user-id">—</small>
+          </span>
+        </div>
+      </aside>
+
+      <header class="mobile-header">
+        <div class="brand compact">
+          <span class="brand-mark" aria-hidden="true">SH</span>
+          <strong>Student Helper</strong>
+        </div>
+        <span class="demo-pill" id="mobile-mode-pill">演示模式</span>
+      </header>
+
+      <main id="main-content" class="main-content">
+        <section class="view is-visible" data-view-panel="overview" aria-labelledby="overview-title">
+          <header class="page-header">
+            <div>
+              <p class="context-line" id="term-context">软件学院 · 2024 级</p>
+              <h1 id="overview-title">你的推免成绩，现在算到哪里</h1>
+            </div>
+            <button class="button secondary" id="integration-button" type="button">
+              连接学校账户
+            </button>
+          </header>
+
+          <div class="notice warning" id="selection-notice" hidden>
+            <span class="notice-symbol" aria-hidden="true">!</span>
+            <div>
+              <strong>有一项需要你确认</strong>
+              <p id="selection-message"></p>
+            </div>
+            <button class="text-button" data-go-view="courses" type="button">去选择课程</button>
+          </div>
+
+          <section class="flight-board" aria-label="推免成绩总览">
+            <div class="primary-metric">
+              <span class="metric-label">当前平均学分绩点</span>
+              <div class="metric-value-row">
+                <strong class="metric-value" id="gpa-value">—</strong>
+                <span class="metric-unit">/ 4.00</span>
+              </div>
+              <p id="gpa-caption">仅统计规则内、已有成绩且已确认的课程</p>
+            </div>
+
+            <div class="metric-ledger">
+              <div>
+                <span>规则内学分</span>
+                <strong id="included-credits">—</strong>
+              </div>
+              <div>
+                <span>加权平均分</span>
+                <strong id="weighted-average">—</strong>
+              </div>
+              <div>
+                <span>算术平均分</span>
+                <strong id="arithmetic-average">—</strong>
+              </div>
+              <div>
+                <span>未修完成后 GPA 区间</span>
+                <strong id="future-range">—</strong>
+              </div>
+            </div>
+
+            <div class="board-stamp">
+              <span>规则</span>
+              <strong>SE · 2024</strong>
+              <small>截至 2027 春</small>
+            </div>
+          </section>
+
+          <section class="route-section" aria-labelledby="route-title">
+            <div class="section-heading">
+              <div>
+                <h2 id="route-title">A–F 计分航道</h2>
+              </div>
+              <span class="legend"><i></i> 已满足最低要求</span>
+            </div>
+            <div class="rule-route" id="rule-route" aria-live="polite"></div>
+          </section>
+
+          <div class="workspace-grid">
+            <section class="work-panel scenario-panel" aria-labelledby="scenario-title">
+              <div class="section-heading compact-heading">
+                <div>
+                  <h2 id="scenario-title">如果接下来考到这些分数</h2>
+                </div>
+                <span class="scenario-result" id="scenario-result">尚未测算</span>
+              </div>
+              <div class="scenario-list" id="scenario-list"></div>
+              <div class="panel-actions">
+                <button class="button primary" id="calculate-scenario" type="button">计算情景绩点</button>
+                <button class="button ghost" id="reset-scenario" type="button">恢复建议分数</button>
+              </div>
+            </section>
+
+            <section class="work-panel data-panel" aria-labelledby="data-title">
+              <div class="section-heading compact-heading">
+                <div>
+                  <h2 id="data-title">数据可信度</h2>
+                </div>
+              </div>
+              <dl class="data-ledger">
+                <div>
+                  <dt>当前来源</dt>
+                  <dd><span class="source-tag demo" id="source-tag">演示数据</span></dd>
+                </div>
+                <div>
+                  <dt>最后同步</dt>
+                  <dd id="last-sync">—</dd>
+                </div>
+                <div>
+                  <dt>凭据策略</dt>
+                  <dd>只保存会话，不保存密码</dd>
+                </div>
+              </dl>
+              <button class="inline-link" data-go-view="rules" type="button">查看规则来源与计算细节</button>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="courses" aria-labelledby="courses-title">
+          <header class="page-header">
+            <div>
+              <p class="context-line">成绩明细</p>
+              <h1 id="courses-title">每一门课，为什么被计入</h1>
+            </div>
+            <div class="header-stat">
+              <span>已获得成绩</span>
+              <strong id="completed-course-count">—</strong>
+            </div>
+          </header>
+
+          <div class="filter-bar" role="search">
+            <label class="search-field">
+              <span class="sr-only">搜索课程</span>
+              <span aria-hidden="true">⌕</span>
+              <input id="course-search" type="search" placeholder="搜索课程名或课程代码" />
+            </label>
+            <label>
+              <span class="sr-only">规则组</span>
+              <select id="group-filter">
+                <option value="all">全部规则组</option>
+                <option value="A">A · 数理基础</option>
+                <option value="B">B · 工程基础</option>
+                <option value="C">C · 外语</option>
+                <option value="D">D · 思政</option>
+                <option value="E">E · 核心专业</option>
+                <option value="F">F · 一般专业</option>
+              </select>
+            </label>
+            <label>
+              <span class="sr-only">完成状态</span>
+              <select id="status-filter">
+                <option value="all">全部状态</option>
+                <option value="completed">已有成绩</option>
+                <option value="planned">待修 / 待出分</option>
+                <option value="selected">已选入方向课</option>
+                <option value="outside">当前规则外</option>
+              </select>
+            </label>
+            <span class="filter-count" id="filter-count">—</span>
+          </div>
+
+          <div class="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">规则</th>
+                  <th scope="col">课程</th>
+                  <th scope="col">学期</th>
+                  <th scope="col">学分</th>
+                  <th scope="col">成绩</th>
+                  <th scope="col">课程绩点</th>
+                  <th scope="col">计入状态</th>
+                  <th scope="col"><span class="sr-only">操作</span></th>
+                </tr>
+              </thead>
+              <tbody id="course-table-body"></tbody>
+            </table>
+            <div class="empty-state" id="course-empty" hidden>没有符合当前筛选条件的课程。</div>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="rules" aria-labelledby="rules-title">
+          <header class="page-header">
+            <div>
+              <p class="context-line">规则库</p>
+              <h1 id="rules-title">计分规则</h1>
+            </div>
+            <label class="rule-picker">
+              <span>当前规则</span>
+              <select id="rule-selector" aria-label="切换计分规则"></select>
+              <small id="rule-count">—</small>
+            </label>
+          </header>
+
+          <div class="rule-layout">
+            <article class="rule-document">
+              <div class="document-title">
+                <div>
+                  <span>发布规则</span>
+                  <h2 id="rule-name">正在读取</h2>
+                </div>
+                <span id="rule-version">—</span>
+              </div>
+
+              <section class="formula-block">
+                <span>百分制换算</span>
+                <p>课程绩点 = 4 − 3 × (100 − X)<sup>2</sup> / 1600</p>
+                <small>60 ≤ X ≤ 100；60 分以下绩点为 0；按正考成绩计入。</small>
+              </section>
+
+              <div class="mapping-row" aria-label="五级制绩点换算">
+                <span><b>优秀</b> 4.0</span>
+                <span><b>良好</b> 3.5</span>
+                <span><b>中等</b> 2.8</span>
+                <span><b>及格</b> 1.7</span>
+                <span><b>不及格</b> 0</span>
+              </div>
+
+              <div class="rule-table" id="rule-group-table"></div>
+            </article>
+
+            <aside class="rule-aside">
+              <section class="aside-block caution">
+                <span class="aside-index">待确认</span>
+                <h2>方向课超过 6 学分怎么取</h2>
+                <p>文件未规定超出部分的选取顺序，需人工确认计入课程。</p>
+              </section>
+              <section class="aside-block">
+                <span class="aside-index">边界</span>
+                <h2>班级均分与排名</h2>
+                <p>学生接口无全班数据，需另接学校授权统计服务。</p>
+              </section>
+              <section class="aside-block">
+                <span class="aside-index">隐私</span>
+                <h2>统一认证密码不落盘</h2>
+                <p>密码不保存；学校会话随服务关闭或超时失效。</p>
+              </section>
+            </aside>
+          </div>
+        </section>
+      </main>
+
+      <nav class="mobile-nav" aria-label="移动端主导航">
+        <button class="is-active" data-view="overview" type="button"><span>⌁</span>总览</button>
+        <button data-view="courses" type="button"><span>≡</span>成绩</button>
+        <button data-view="rules" type="button"><span>◇</span>规则</button>
+      </nav>
+    </div>
+
+    <dialog id="course-dialog">
+      <form method="dialog" id="course-form">
+        <div class="dialog-header">
+          <div>
+            <span id="dialog-course-code">—</span>
+            <h2 id="dialog-course-name">修改课程</h2>
+          </div>
+          <button class="icon-button" value="cancel" aria-label="关闭" type="submit">×</button>
+        </div>
+        <input type="hidden" id="dialog-course-id" />
+        <label class="field">
+          <span>成绩制</span>
+          <select id="dialog-score-scale">
+            <option value="percentage">百分制</option>
+            <option value="five_level">五级制</option>
+            <option value="pass_fail">通过 / 不通过</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>成绩</span>
+          <input id="dialog-score" autocomplete="off" placeholder="留空表示待修或待出分" />
+          <small id="score-hint">百分制请输入 0–100。</small>
+        </label>
+        <label class="check-field" id="direction-checkbox">
+          <input id="dialog-selected" type="checkbox" />
+          <span>
+            <strong>选入方向课的 6 学分组合</strong>
+            <small>只影响推免规则计算，不改变课程成绩。</small>
+          </span>
+        </label>
+        <p class="dialog-error" id="dialog-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button class="button ghost" value="cancel" type="submit">取消</button>
+          <button class="button primary" id="save-course" value="default" type="button">保存并重算</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="integration-dialog" class="integration-dialog">
+      <div class="dialog-header">
+        <div>
+          <span>BUAA · SSO</span>
+          <h2>连接学校账户</h2>
+        </div>
+        <button class="icon-button" id="close-integration" aria-label="关闭" type="button">×</button>
+      </div>
+
+      <section id="school-login-panel">
+        <div class="privacy-note">
+          <span aria-hidden="true">⌁</span>
+          <p><strong>密码不会保存。</strong>学校会话仅在当前服务进程内有效。</p>
+        </div>
+        <form id="school-login-form">
+          <label class="field">
+            <span>学号</span>
+            <input id="school-username" name="username" autocomplete="username" inputmode="numeric" required />
+          </label>
+          <label class="field">
+            <span>统一认证密码</span>
+            <input id="school-password" name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <label class="field" id="captcha-field" hidden>
+            <span>验证码</span>
+            <div class="captcha-row">
+              <input id="school-captcha" name="captcha" autocomplete="off" />
+              <img id="captcha-image" alt="北航统一认证验证码" />
+              <button class="text-button" id="refresh-captcha" type="button">换一张</button>
+            </div>
+          </label>
+          <p class="dialog-error" id="school-login-error" role="alert"></p>
+          <div class="dialog-actions">
+            <button class="button ghost" id="cancel-school-login" type="button">取消</button>
+            <button class="button primary" id="submit-school-login" type="submit">登录并同步成绩</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="school-connected-panel" hidden>
+        <div class="connected-account">
+          <span class="avatar" aria-hidden="true">航</span>
+          <div>
+            <strong id="connected-user">已连接</strong>
+            <span id="connected-student-id">—</span>
+          </div>
+          <span class="status-chip">会话有效</span>
+        </div>
+        <div class="term-selection">
+          <div>
+            <strong>同步范围</strong>
+            <span>默认覆盖 2024 入学至 2027 春季的全部学期</span>
+          </div>
+          <div class="term-grid" id="term-grid"></div>
+        </div>
+        <p class="dialog-error" id="school-sync-error" role="alert"></p>
+        <div class="dialog-actions split-actions">
+          <button class="button ghost danger-button" id="school-logout" type="button">退出学校账户</button>
+          <button class="button primary" id="school-sync" type="button">立即同步</button>
+        </div>
+      </section>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="/static/app.js?v=20260915g" defer></script>
+  </body>
+</html>

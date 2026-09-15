@@ -1,0 +1,1 @@
+"""Student Helper application package."""
