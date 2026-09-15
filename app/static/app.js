@@ -94,7 +94,9 @@ function renderIntegration() {
   tag.classList.toggle("demo", !localConnected);
   tag.classList.toggle("school", localConnected);
   $("#account-logout").hidden = !localConnected;
-  $("#export-actions").hidden = !localConnected;
+  $$(".account-transfer-actions").forEach((actions) => {
+    actions.hidden = !localConnected;
+  });
 }
 
 function renderDashboard() {
@@ -257,25 +259,27 @@ function calendarStatusMatches(item, filter) {
   return item.status === filter;
 }
 
-function calendarDateParts(item, selectedYear) {
-  if (!item.startDate) return { month: "本年", day: "休", group: "未安排" };
-  const [startYear, startMonth, startDay] = item.startDate.split("-");
-  if (Number(startYear) < selectedYear) {
-    return { month: startMonth, day: startDay, group: "跨年启动" };
+function calendarDateParts(item) {
+  if (!item.startDate) {
+    return { year: String(item.year), start: "本年", end: "不举办", group: `${item.year} 年 · 未安排` };
   }
+  const [startYear, startMonth, startDay] = item.startDate.split("-");
   const endParts = item.endDate?.split("-") || [];
-  const day = item.endDate && item.endDate !== item.startDate
-    ? startMonth === endParts[1]
-      ? `${startDay}—${endParts[2]}`
-      : `${startDay}→${endParts[1]}.${endParts[2]}`
-    : startDay;
-  return { month: startMonth, day, group: `${startMonth} 月` };
+  const crossYear = Number(startYear) < item.year;
+  const endYear = endParts[0] || startYear;
+  return {
+    year: startYear === endYear ? startYear : `${startYear}→${endYear}`,
+    start: `${startMonth}.${startDay}`,
+    end: item.endDate && item.endDate !== item.startDate ? `${endParts[1]}.${endParts[2]}` : "",
+    group: crossYear ? `${item.year} 年 · 跨年启动` : `${item.year} 年 · ${startMonth} 月`,
+  };
 }
 
 function renderCompetitionCalendar() {
   const payload = state.competitionCalendar;
   if (!payload) return;
-  const selectedYear = Number($("#calendar-year").value || 2027);
+  const yearValue = $("#calendar-year").value;
+  const selectedYear = yearValue === "all" ? null : Number(yearValue);
   const category = $("#calendar-category").value;
   const status = $("#calendar-status").value;
   const query = $("#calendar-search").value.trim().toLowerCase();
@@ -289,7 +293,7 @@ function renderCompetitionCalendar() {
   $("#calendar-notice").textContent = payload.notice;
 
   const items = payload.items
-    .filter((item) => item.year === selectedYear)
+    .filter((item) => selectedYear === null || item.year === selectedYear)
     .filter((item) => category === "all" || item.categoryId === category)
     .filter((item) => calendarStatusMatches(item, status))
     .filter((item) => !query || item.searchText.toLowerCase().includes(query))
@@ -308,7 +312,7 @@ function renderCompetitionCalendar() {
 
   const groups = [];
   items.forEach((item) => {
-    const parts = calendarDateParts(item, selectedYear);
+    const parts = calendarDateParts(item);
     let group = groups.at(-1);
     if (!group || group.name !== parts.group) {
       group = { name: parts.group, items: [] };
@@ -329,7 +333,9 @@ function renderCompetitionCalendar() {
                 return `
                   <article class="competition-row">
                     <time class="calendar-date-ticket" datetime="${escapeHtml(item.startDate || "")}">
-                      <span>${escapeHtml(parts.month)}月</span><strong>${escapeHtml(parts.day)}</strong>
+                      <span>${escapeHtml(parts.year)}</span>
+                      <strong>${escapeHtml(parts.start)}</strong>
+                      ${parts.end ? `<em>${item.startDate ? "→ " : ""}${escapeHtml(parts.end)}</em>` : ""}
                     </time>
                     <div class="competition-main">
                       <div class="competition-tags">
@@ -1027,6 +1033,31 @@ async function deleteComprehensiveItem(itemId) {
   }
 }
 
+async function importCsv(fileInput, endpoint, label, trigger) {
+  const file = fileInput.files?.[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    showToast("CSV 文件不能超过 2 MB");
+    fileInput.value = "";
+    return;
+  }
+  trigger.disabled = true;
+  try {
+    const result = await api(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "text/csv; charset=utf-8" },
+      body: await file.text(),
+    });
+    await reloadCoreData();
+    showToast(`${label}导入完成：新增 ${result.created}，更新 ${result.updated}`);
+  } catch (error) {
+    showToast(`${label}导入失败：${error.message}`);
+  } finally {
+    trigger.disabled = false;
+    fileInput.value = "";
+  }
+}
+
 function bindEvents() {
   $$("[data-view]").forEach((button) =>
     button.addEventListener("click", () => switchView(button.dataset.view)),
@@ -1041,6 +1072,26 @@ function bindEvents() {
     (selector) => $(selector).addEventListener("input", renderCompetitionCalendar),
   );
   $("#dialog-score-scale").addEventListener("change", updateScoreHint);
+  $("#import-courses-trigger").addEventListener("click", () => $("#import-courses-file").click());
+  $("#import-courses-file").addEventListener("change", () =>
+    importCsv(
+      $("#import-courses-file"),
+      "/api/v1/import/courses.csv",
+      "课程成绩",
+      $("#import-courses-trigger"),
+    ),
+  );
+  $("#import-comprehensive-trigger").addEventListener("click", () =>
+    $("#import-comprehensive-file").click(),
+  );
+  $("#import-comprehensive-file").addEventListener("change", () =>
+    importCsv(
+      $("#import-comprehensive-file"),
+      "/api/v1/import/comprehensive.csv",
+      "综合测评",
+      $("#import-comprehensive-trigger"),
+    ),
+  );
   $("#save-course").addEventListener("click", saveCourse);
   $("#calculate-scenario").addEventListener("click", calculateScenario);
   $("#reset-scenario").addEventListener("click", () => {

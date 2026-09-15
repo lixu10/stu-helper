@@ -1302,7 +1302,7 @@ tbody tr:hover {
 
 .calendar-date-ticket {
   display: grid;
-  min-height: 68px;
+  min-height: 76px;
   place-content: center;
   border: 1px solid #b9cce0;
   border-top: 4px solid var(--flight-blue);
@@ -1320,8 +1320,16 @@ tbody tr:hover {
 .calendar-date-ticket strong {
   margin-top: 3px;
   font-family: var(--numeric);
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.1;
+}
+
+.calendar-date-ticket em {
+  margin-top: 3px;
+  color: var(--muted);
+  font-family: var(--numeric);
+  font-size: 9px;
+  font-style: normal;
 }
 
 .competition-main {
@@ -1703,6 +1711,12 @@ dialog::backdrop {
 .export-actions {
   display: flex;
   gap: 8px;
+}
+
+.page-header-side {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
 }
 
 .target-board {
@@ -2662,6 +2676,10 @@ dialog::backdrop {
 
   .export-actions {
     flex-wrap: wrap;
+  }
+
+  .page-header-side {
+    justify-items: start;
   }
 
   .regret-heading {

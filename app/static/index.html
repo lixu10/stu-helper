@@ -10,7 +10,7 @@
     />
     <title>Student Helper</title>
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=20260915j" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260915k" />
   </head>
   <body>
     <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -191,9 +191,16 @@
               <p class="context-line">成绩明细</p>
               <h1 id="courses-title">每一门课，为什么被计入</h1>
             </div>
-            <div class="header-stat">
-              <span>已获得成绩</span>
-              <strong id="completed-course-count">—</strong>
+            <div class="page-header-side">
+              <div class="header-stat">
+                <span>已获得成绩</span>
+                <strong id="completed-course-count">—</strong>
+              </div>
+              <div class="export-actions account-transfer-actions" hidden>
+                <button class="button ghost" id="import-courses-trigger" type="button">导入 CSV</button>
+                <a class="button ghost" href="/api/v1/export/courses.csv">导出 CSV</a>
+                <input id="import-courses-file" type="file" accept=".csv,text/csv" hidden />
+              </div>
             </div>
           </header>
 
@@ -254,8 +261,7 @@
               <p class="context-line">V0.2 · 学业分析</p>
               <h1 id="analysis-title">从历史成绩推到下一步</h1>
             </div>
-            <div class="export-actions" id="export-actions">
-              <a class="button ghost" href="/api/v1/export/courses.csv">导出 CSV</a>
+            <div class="export-actions account-transfer-actions" hidden>
               <a class="button ghost" href="/api/v1/export/data.json">导出 JSON</a>
             </div>
           </header>
@@ -334,7 +340,14 @@
               <p class="context-line">参考 2023 级折合方法</p>
               <h1 id="comprehensive-title">综合测评计算</h1>
             </div>
-            <span class="reference-chip">非 2024 级官方结果</span>
+            <div class="page-header-side">
+              <span class="reference-chip">非 2024 级官方结果</span>
+              <div class="export-actions account-transfer-actions" hidden>
+                <button class="button ghost" id="import-comprehensive-trigger" type="button">导入 CSV</button>
+                <a class="button ghost" href="/api/v1/export/comprehensive.csv">导出 CSV</a>
+                <input id="import-comprehensive-file" type="file" accept=".csv,text/csv" hidden />
+              </div>
+            </div>
           </header>
 
           <div class="comprehensive-layout">
@@ -407,7 +420,7 @@
 
           <div class="calendar-filter-bar">
             <label class="calendar-search"><span aria-hidden="true">⌕</span><input id="calendar-search" type="search" placeholder="搜索竞赛" /></label>
-            <label><span class="sr-only">年份</span><select id="calendar-year"><option value="2026">2026 年</option><option value="2027" selected>2027 年</option></select></label>
+            <label><span class="sr-only">年份</span><select id="calendar-year"><option value="all" selected>全部年份</option><option value="2026">2026 年</option><option value="2027">2027 年</option></select></label>
             <label><span class="sr-only">竞赛类别</span><select id="calendar-category"><option value="all">全部类别</option></select></label>
             <label><span class="sr-only">时间状态</span><select id="calendar-status"><option value="all">全部状态</option><option value="verified">官方信息</option><option value="estimated">预计时间</option><option value="not-held">本年不举办</option></select></label>
             <label><span class="sr-only">时间排序</span><select id="calendar-sort"><option value="asc">时间从近到远</option><option value="desc">时间从远到近</option></select></label>
@@ -595,6 +608,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="/static/app.js?v=20260915j" defer></script>
+    <script src="/static/app.js?v=20260915k" defer></script>
   </body>
 </html>

@@ -449,6 +449,51 @@ def update_course(
         )
 
 
+def import_courses(user_id: int, courses: list[dict]) -> dict[str, int]:
+    """Atomically merge validated CSV rows by course code."""
+    created = 0
+    updated = 0
+    with connection() as db:
+        existing_codes = {
+            str(row["code"])
+            for row in db.execute("SELECT code FROM courses WHERE user_id = ?", (user_id,))
+        }
+        for course in courses:
+            if course["code"] in existing_codes:
+                updated += 1
+            else:
+                created += 1
+                existing_codes.add(course["code"])
+            db.execute(
+                """
+                INSERT INTO courses(
+                    user_id, code, name, credits, term_code, score_text,
+                    score_scale, selected_for_rule, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual')
+                ON CONFLICT(user_id, code) DO UPDATE SET
+                    name = excluded.name,
+                    credits = excluded.credits,
+                    term_code = excluded.term_code,
+                    score_text = excluded.score_text,
+                    score_scale = excluded.score_scale,
+                    selected_for_rule = excluded.selected_for_rule,
+                    source = 'manual',
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    user_id,
+                    course["code"],
+                    course["name"],
+                    course["credits"],
+                    course["term_code"],
+                    course["score_text"],
+                    course["score_scale"],
+                    int(course["selected_for_rule"]),
+                ),
+            )
+    return {"created": created, "updated": updated, "total": len(courses)}
+
+
 def _cohort_from_student_id(student_id: str) -> int:
     prefix = student_id[:2]
     if prefix.isdigit():
@@ -768,6 +813,81 @@ def add_comprehensive_item(user_id: int, item: dict) -> int:
                 ),
             ).lastrowid
         )
+
+
+def import_comprehensive_items(user_id: int, items: list[dict]) -> dict[str, int]:
+    """Atomically merge validated comprehensive rows by type and normalized values."""
+    created = 0
+    updated = 0
+    with connection() as db:
+        existing: dict[tuple[str, str], int] = {}
+        for row in db.execute(
+            "SELECT id, kind, values_json FROM comprehensive_items WHERE user_id = ?",
+            (user_id,),
+        ):
+            try:
+                normalized_values = json.dumps(
+                    json.loads(row["values_json"] or "{}"),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+            except (TypeError, ValueError):
+                normalized_values = str(row["values_json"])
+            existing[(str(row["kind"]), normalized_values)] = int(row["id"])
+        for item in items:
+            values_json = json.dumps(
+                item.get("values") or {}, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+            )
+            key = (str(item["kind"]), values_json)
+            item_id = existing.get(key)
+            if item_id is None:
+                created += 1
+                item_id = int(
+                    db.execute(
+                        """
+                        INSERT INTO comprehensive_items(
+                            user_id, kind, values_json, category_id, item_type, name,
+                            academic_year, base_score, factor, note
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            user_id,
+                            item["kind"],
+                            values_json,
+                            item["category_id"],
+                            item["item_type"],
+                            item["name"],
+                            item["academic_year"],
+                            item["base_score"],
+                            item["factor"],
+                            item["note"],
+                        ),
+                    ).lastrowid
+                )
+                existing[key] = item_id
+            else:
+                updated += 1
+                db.execute(
+                    """
+                    UPDATE comprehensive_items SET
+                        category_id = ?, item_type = ?, name = ?, academic_year = ?,
+                        base_score = ?, factor = ?, note = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND user_id = ?
+                    """,
+                    (
+                        item["category_id"],
+                        item["item_type"],
+                        item["name"],
+                        item["academic_year"],
+                        item["base_score"],
+                        item["factor"],
+                        item["note"],
+                        item_id,
+                        user_id,
+                    ),
+                )
+    return {"created": created, "updated": updated, "total": len(items)}
 
 
 def update_comprehensive_item(user_id: int, item_id: int, item: dict) -> None:

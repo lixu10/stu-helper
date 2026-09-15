@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import csv
 import io
+import json
 import logging
 import os
 from pathlib import Path
@@ -22,6 +23,7 @@ from app.comprehensive import (
     public_comprehensive_rule,
 )
 from app.competition_calendar import public_competition_calendar
+from app.csv_transfer import parse_comprehensive_csv, parse_courses_csv, safe_csv_cell
 from app.database import (
     add_comprehensive_item,
     create_app_session,
@@ -30,6 +32,8 @@ from app.database import (
     delete_comprehensive_item,
     get_comprehensive_profile,
     get_selected_rule,
+    import_comprehensive_items,
+    import_courses,
     init_database,
     list_comprehensive_items,
     list_courses,
@@ -362,24 +366,106 @@ async def export_courses_csv(request: Request):
     user_id = await _require_account(request)
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["课程代码", "课程名称", "学期", "学分", "成绩", "成绩制", "来源"])
+    writer.writerow(
+        ["课程代码", "课程名称", "学期", "学分", "成绩", "成绩制", "计入方向课", "来源"]
+    )
     for course in list_courses(user_id):
         writer.writerow(
-            [
+            [safe_csv_cell(value) for value in [
                 course.code,
                 course.name,
                 course.term_code,
                 course.credits,
                 course.score_text or "",
                 course.score_scale,
+                "是" if course.selected_for_rule else "否",
                 course.source,
-            ]
+            ]]
         )
     return Response(
         content="\ufeff" + output.getvalue(),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="student-helper-courses.csv"'},
     )
+
+
+@app.post("/api/v1/import/courses.csv")
+async def import_courses_csv(request: Request):
+    user_id = await _require_account(request)
+    try:
+        courses = parse_courses_csv(await request.body())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"status": "imported", **import_courses(user_id, courses)}
+
+
+@app.get("/api/v1/export/comprehensive.csv")
+async def export_comprehensive_csv(request: Request):
+    user_id = await _require_account(request)
+    stored_items = list_comprehensive_items(user_id)
+    payload = _comprehensive_payload(user_id, editable=True)
+    evaluated = {item["id"]: item for item in payload["calculation"]["items"]}
+    category_names = {
+        category["id"]: category["name"] for category in payload["rule"]["categories"]
+    }
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "项目类型标识",
+            "项目名称",
+            "类别",
+            "学年",
+            "参数JSON",
+            "基础分",
+            "系数",
+            "最终计入分",
+            "是否计入",
+            "备注",
+        ]
+    )
+    for item in stored_items:
+        result = evaluated.get(item["id"], {})
+        writer.writerow(
+            [
+                safe_csv_cell(item["kind"]),
+                safe_csv_cell(item["name"]),
+                category_names.get(item["category_id"], item["category_id"]),
+                safe_csv_cell(item["academic_year"]),
+                json.dumps(
+                    item.get("values") or {},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+                item["base_score"],
+                item["factor"],
+                result.get("finalScore", 0),
+                "是" if result.get("included") else "否",
+                safe_csv_cell(item["note"]),
+            ]
+        )
+    writer.writerow([])
+    base_gpa = payload["calculation"]["baseGpa"]
+    final_score = payload["calculation"]["finalScore"]
+    writer.writerow(["汇总", "基础 GPA", "" if base_gpa is None else base_gpa])
+    writer.writerow(["汇总", "综测加分", payload["calculation"]["weightedAddition"]])
+    writer.writerow(["汇总", "最终综合成绩", "" if final_score is None else final_score])
+    return Response(
+        content="\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="student-helper-comprehensive.csv"'},
+    )
+
+
+@app.post("/api/v1/import/comprehensive.csv")
+async def import_comprehensive_csv(request: Request):
+    user_id = await _require_account(request)
+    try:
+        items = parse_comprehensive_csv(await request.body())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"status": "imported", **import_comprehensive_items(user_id, items)}
 
 
 @app.get("/api/v1/export/data.json")
